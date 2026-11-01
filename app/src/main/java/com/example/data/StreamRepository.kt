@@ -33,6 +33,31 @@ class StreamRepository(
 
     private val knownUrls = mutableSetOf<String>()
 
+    private val _currentMovieTitle = MutableStateFlow<String?>(null)
+    val currentMovieTitle: StateFlow<String?> = _currentMovieTitle.asStateFlow()
+
+    fun setCurrentMovieTitle(title: String?) {
+        val clean = title?.trim()
+        _currentMovieTitle.value = if (!clean.isNullOrEmpty() && !isGenericTitle(clean)) clean else null
+    }
+
+    fun isGenericTitle(title: String?): Boolean {
+        if (title.isNullOrBlank()) return true
+        val lower = title.trim().lowercase(Locale.ROOT)
+        return lower == "baixar vídeo drama" ||
+            lower == "baixar video drama" ||
+            lower.startsWith("baixar vídeo") ||
+            lower.startsWith("baixar video") ||
+            lower == "filmemeu" ||
+            lower == "untitled" ||
+            lower == "filme detectado" ||
+            lower == "reproduzindo" ||
+            lower == "site aberto" ||
+            lower == "vídeo filmemeu" ||
+            lower == "video filmemeu" ||
+            lower.length < 2
+    }
+
     fun setFilterAbove15Min(enabled: Boolean) {
         _filterAbove15Min.value = enabled
     }
@@ -42,6 +67,11 @@ class StreamRepository(
             knownUrls.clear()
         }
         _detectedStreams.value = emptyList()
+        _currentMovieTitle.value = null
+    }
+
+    fun notifyPlayerClosed(url: String) {
+        // Can be used to track completed streams or cleanup if needed
     }
 
     fun onStreamCandidate(
@@ -173,22 +203,26 @@ class StreamRepository(
 
     private fun deriveTitle(url: String, pageTitle: String): String {
         return try {
+            val active = _currentMovieTitle.value
+            if (!active.isNullOrBlank() && !isGenericTitle(active)) {
+                return active.trim()
+            }
+
             val cleanPage = pageTitle.trim().replace(Regex("""[\/\\:*?"<>|]"""), "")
-            if (cleanPage.length > 2 &&
-                !cleanPage.equals("FilmeMeu", ignoreCase = true) &&
-                !cleanPage.equals("Untitled", ignoreCase = true)
-            ) {
-                cleanPage
-            } else {
-                val lastPath = url.substringBefore("?").substringAfterLast("/")
-                if (lastPath.length > 3) {
-                    URLDecoder.decode(lastPath, "UTF-8")
-                } else {
-                    "Vídeo FilmeMeu"
+            if (cleanPage.length > 2 && !isGenericTitle(cleanPage)) {
+                return cleanPage
+            }
+
+            val lastPath = url.substringBefore("?").substringAfterLast("/")
+            if (lastPath.length > 3) {
+                val decoded = try { URLDecoder.decode(lastPath, "UTF-8") } catch (e: Exception) { lastPath }
+                if (!isGenericTitle(decoded)) {
+                    return decoded
                 }
             }
+            "Filme Selecionado"
         } catch (e: Exception) {
-            "Vídeo FilmeMeu"
+            _currentMovieTitle.value ?: "Filme Selecionado"
         }
     }
 

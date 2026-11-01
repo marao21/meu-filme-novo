@@ -89,7 +89,7 @@ import com.example.ui.theme.TextSecondary
 import kotlinx.coroutines.flow.collectLatest
 
 private const val DEFAULT_URL = "https://filmemeu.vercel.app/"
-private const val APP_USER_AGENT = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 FilmeMeuApp/1.0"
+private const val APP_USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36"
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -121,12 +121,36 @@ fun BrowserScreen(
     val detectedList by repository.detectedStreams.collectAsState()
     val above15Count = remember(detectedList) { detectedList.count { it.isAbove15Min } }
 
+    var isUserInMovie by remember { mutableStateOf(false) }
+    var activeMovieTitle by remember { mutableStateOf<String?>(null) }
     var latestBannerStream by remember { mutableStateOf<StreamMedia?>(null) }
 
-    // Listen to repository movie alerts
+    // Helper for 1-click direct return to catalog
+    val returnToCatalogInOneClick: () -> Unit = {
+        isUserInMovie = false
+        activeMovieTitle = null
+        latestBannerStream = null
+        repository.clearDetected()
+        webViewInstance?.evaluateJavascript(
+            "if (window.__goToCatalog) { window.__goToCatalog(); } else if (typeof voltarParaCatalogo === 'function') { voltarParaCatalogo(false); }",
+            null
+        )
+    }
+
+    // Keep latest banner stream active and restore it when user returns from player into a movie
+    LaunchedEffect(isUserInMovie, detectedList) {
+        if (!isUserInMovie) {
+            latestBannerStream = null
+        } else if (latestBannerStream == null && detectedList.isNotEmpty()) {
+            latestBannerStream = detectedList.firstOrNull { it.isAbove15Min } ?: detectedList.firstOrNull()
+        }
+    }
+
     LaunchedEffect(Unit) {
         repository.newMovieAlert.collectLatest { stream ->
-            latestBannerStream = stream
+            if (isUserInMovie) {
+                latestBannerStream = stream
+            }
         }
     }
 
@@ -152,18 +176,30 @@ fun BrowserScreen(
                         null
                     )
                 }
+                else -> {
+                    // D-pad navigation handled naturally by WebView and setas.js
+                }
             }
         }
     }
 
-    // Back handling: if web fullscreen is active, exit it. Otherwise handle webview back
+    // Back handling: if web fullscreen is active, exit it.
+    // If inside a movie, 1 single click returns cleanly to catalog without stepping through iframe redirect history!
     BackHandler {
         if (customFullscreenView != null) {
             customViewCallback?.onCustomViewHidden()
             customFullscreenView = null
             customViewCallback = null
+        } else if (isUserInMovie) {
+            returnToCatalogInOneClick()
         } else if (canGoBack && webViewInstance?.canGoBack() == true) {
             webViewInstance?.goBack()
+            webViewInstance?.postDelayed({
+                webViewInstance?.evaluateJavascript(
+                    "if (window.__checkCatalogState) window.__checkCatalogState();",
+                    null
+                )
+            }, 300)
         } else {
             val now = System.currentTimeMillis()
             if (now - lastBackPressTime < 2000) {
@@ -190,17 +226,25 @@ fun BrowserScreen(
                     ) {
                         IconButton(
                             onClick = {
-                                if (webViewInstance?.canGoBack() == true) {
+                                if (isUserInMovie) {
+                                    returnToCatalogInOneClick()
+                                } else if (webViewInstance?.canGoBack() == true) {
                                     webViewInstance?.goBack()
+                                    webViewInstance?.postDelayed({
+                                        webViewInstance?.evaluateJavascript(
+                                            "if (window.__checkCatalogState) window.__checkCatalogState();",
+                                            null
+                                        )
+                                    }, 300)
                                 }
                             },
-                            enabled = canGoBack,
+                            enabled = isUserInMovie || canGoBack,
                             modifier = Modifier.size(36.dp).testTag("web_btn_back")
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Voltar",
-                                tint = if (canGoBack) TextPrimary else TextSecondary.copy(alpha = 0.3f),
+                                tint = if (isUserInMovie || canGoBack) TextPrimary else TextSecondary.copy(alpha = 0.3f),
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -224,6 +268,10 @@ fun BrowserScreen(
 
                         IconButton(
                             onClick = {
+                                isUserInMovie = false
+                                activeMovieTitle = null
+                                latestBannerStream = null
+                                repository.clearDetected()
                                 webViewInstance?.loadUrl(DEFAULT_URL)
                                 inputUrl = DEFAULT_URL
                             },
@@ -361,6 +409,12 @@ fun BrowserScreen(
                                 ViewGroup.LayoutParams.MATCH_PARENT
                             )
 
+                            val currentWebView = this
+                            android.webkit.CookieManager.getInstance().apply {
+                                setAcceptCookie(true)
+                                setAcceptThirdPartyCookies(currentWebView, true)
+                            }
+
                             settings.apply {
                                 javaScriptEnabled = true
                                 domStorageEnabled = true
@@ -379,10 +433,15 @@ fun BrowserScreen(
                                 @JavascriptInterface
                                 fun onVideoFound(url: String?, title: String?, durationSec: Long) {
                                     try {
-                                        if (!url.isNullOrBlank()) {
+                                        if (!url.isNullOrBlank() && isUserInMovie) {
+                                            val resolvedTitle = if (!title.isNullOrBlank() && !repository.isGenericTitle(title)) {
+                                                title.trim()
+                                            } else {
+                                                activeMovieTitle ?: ""
+                                            }
                                             repository.onStreamCandidate(
                                                 url = url,
-                                                pageTitle = title ?: pageTitle,
+                                                pageTitle = resolvedTitle,
                                                 pageUrl = currentUrl,
                                                 initialDurationSec = durationSec,
                                                 userAgent = APP_USER_AGENT
@@ -391,6 +450,38 @@ fun BrowserScreen(
                                     } catch (e: Throwable) {
                                         // Ignore
                                     }
+                                }
+
+                                @JavascriptInterface
+                                fun onMovieSelected(title: String?) {
+                                    val clean = title?.trim()
+                                    if (!clean.isNullOrEmpty() && !repository.isGenericTitle(clean)) {
+                                        activeMovieTitle = clean
+                                        repository.setCurrentMovieTitle(clean)
+                                        isUserInMovie = true
+                                    }
+                                }
+
+                                @JavascriptInterface
+                                fun onMovieStateChanged(inMovie: Boolean, title: String?) {
+                                    isUserInMovie = inMovie
+                                    if (inMovie) {
+                                        val clean = title?.trim()
+                                        if (!clean.isNullOrEmpty() && !repository.isGenericTitle(clean)) {
+                                            activeMovieTitle = clean
+                                            repository.setCurrentMovieTitle(clean)
+                                        }
+                                    } else {
+                                        onNavigatedToCatalog()
+                                    }
+                                }
+
+                                @JavascriptInterface
+                                fun onNavigatedToCatalog() {
+                                    isUserInMovie = false
+                                    activeMovieTitle = null
+                                    latestBannerStream = null
+                                    repository.clearDetected()
                                 }
                             }, "AndroidBridge")
 
@@ -403,30 +494,70 @@ fun BrowserScreen(
                                         val reqUrl = request?.url?.toString() ?: return false
                                         val lower = reqUrl.lowercase()
 
-                                        if (lower.contains(".m3u8") || lower.contains(".mp4")) {
-                                            repository.onStreamCandidate(
-                                                url = reqUrl,
-                                                pageTitle = pageTitle,
-                                                pageUrl = currentUrl,
-                                                initialDurationSec = 0L,
-                                                userAgent = APP_USER_AGENT
-                                            )
+                                        // 1. Block external app schemes (e.g. shopee://, market://, intent://)
+                                        if (!reqUrl.startsWith("http://") && !reqUrl.startsWith("https://")) {
                                             return true
                                         }
 
-                                        if (reqUrl.startsWith("http://") || reqUrl.startsWith("https://")) {
+                                        // 2. Intercept video streams internally (ignore YouTube trailer streams)
+                                        val isYouTube = lower.contains("youtube.com") || lower.contains("youtu.be") || lower.contains("googlevideo.com")
+                                        if (!isYouTube && (lower.contains(".m3u8") || lower.contains(".mp4"))) {
+                                            if (isUserInMovie) {
+                                                repository.onStreamCandidate(
+                                                    url = reqUrl,
+                                                    pageTitle = activeMovieTitle ?: "",
+                                                    pageUrl = currentUrl,
+                                                    initialDurationSec = 0L,
+                                                    userAgent = APP_USER_AGENT
+                                                )
+                                            }
+                                            return true
+                                        }
+
+                                        // 3. Block external popups, stores, and ad networks
+                                        val host = request.url?.host?.lowercase() ?: ""
+                                        val isBlockedExternal = host.contains("shopee") ||
+                                            host.contains("aliexpress") ||
+                                            host.contains("mercadolivre") ||
+                                            host.contains("amazon") ||
+                                            host.contains("magalu") ||
+                                            host.contains("bet365") ||
+                                            host.contains("betano") ||
+                                            host.contains("doubleclick") ||
+                                            host.contains("adsterra") ||
+                                            host.contains("popunder") ||
+                                            host.contains("googleads") ||
+                                            lower.contains("affiliate") ||
+                                            lower.contains("tracking")
+
+                                        if (isBlockedExternal) {
+                                            return true
+                                        }
+
+                                        // 4. Strict whitelist: only stay in our app system and authorized embeds (e.g. YouTube trailers)
+                                        val isAllowedSystem = host.isEmpty() ||
+                                            host.contains("filmemeu") ||
+                                            host.contains("myembed") ||
+                                            host.contains("vercel.app") ||
+                                            host.contains("supabase") ||
+                                            host.contains("themoviedb") ||
+                                            host.contains("tmdb") ||
+                                            host.contains("hclod.qzz.io") ||
+                                            host.contains("youtube.com") ||
+                                            host.contains("youtube-nocookie.com") ||
+                                            host.contains("googlevideo.com") ||
+                                            host.contains("ytimg.com") ||
+                                            host.contains("google.com") ||
+                                            host.contains("gstatic.com")
+
+                                        if (isAllowedSystem) {
                                             return false
                                         }
 
-                                        return try {
-                                            val intent = Intent.parseUri(reqUrl, Intent.URI_INTENT_SCHEME)
-                                            view?.context?.startActivity(intent)
-                                            true
-                                        } catch (e: Exception) {
-                                            true
-                                        }
+                                        // Block any other outside domain so the user stays strictly in our system
+                                        return true
                                     } catch (e: Exception) {
-                                        return false
+                                        return true
                                     }
                                 }
 
@@ -436,14 +567,17 @@ fun BrowserScreen(
                                 ): WebResourceResponse? {
                                     try {
                                         val reqUrl = request?.url?.toString()
-                                        if (reqUrl != null) {
-                                            repository.onStreamCandidate(
-                                                url = reqUrl,
-                                                pageTitle = pageTitle,
-                                                pageUrl = currentUrl,
-                                                initialDurationSec = 0L,
-                                                userAgent = APP_USER_AGENT
-                                            )
+                                        if (reqUrl != null && isUserInMovie) {
+                                            val lower = reqUrl.lowercase()
+                                            if (!lower.contains("youtube.com") && !lower.contains("googlevideo.com") && !lower.contains("ytimg.com")) {
+                                                repository.onStreamCandidate(
+                                                    url = reqUrl,
+                                                    pageTitle = activeMovieTitle ?: "",
+                                                    pageUrl = currentUrl,
+                                                    initialDurationSec = 0L,
+                                                    userAgent = APP_USER_AGENT
+                                                )
+                                            }
                                         }
                                     } catch (e: Throwable) {
                                         // Ignore
@@ -457,6 +591,12 @@ fun BrowserScreen(
                                     if (url != null) {
                                         currentUrl = url
                                         inputUrl = url
+                                        if (url == DEFAULT_URL || url == "https://filmemeu.vercel.app" || url == "https://filmemeu.vercel.app/") {
+                                            isUserInMovie = false
+                                            activeMovieTitle = null
+                                            latestBannerStream = null
+                                            repository.clearDetected()
+                                        }
                                     }
                                     canGoBack = canGoBack()
                                     canGoForward = canGoForward()
@@ -484,7 +624,7 @@ fun BrowserScreen(
                                 }
 
                                 override fun onReceivedTitle(view: WebView?, title: String?) {
-                                    if (!title.isNullOrBlank()) {
+                                    if (!title.isNullOrBlank() && !repository.isGenericTitle(title)) {
                                         pageTitle = title
                                     }
                                 }
@@ -517,11 +657,10 @@ fun BrowserScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Detected Movie Banner at the bottom of the browser
+                // Detected Movie Banner at the bottom of the browser - only shown when inside a movie
                 DetectedStreamBanner(
-                    stream = latestBannerStream,
+                    stream = if (isUserInMovie) latestBannerStream else null,
                     onPlay = { stream ->
-                        latestBannerStream = null
                         onPlayStream(stream)
                     },
                     onDismiss = { latestBannerStream = null },

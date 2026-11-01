@@ -14,7 +14,9 @@ data class StreamMedia(
     val isAbove15Min: Boolean = false,
     val timestamp: Long = System.currentTimeMillis(),
     val resolution: String = "",
-    val isLive: Boolean = false
+    val isLive: Boolean = false,
+    val serverName: String = "",
+    val serverClicked: Boolean = false
 ) {
     val formattedDuration: String
         get() {

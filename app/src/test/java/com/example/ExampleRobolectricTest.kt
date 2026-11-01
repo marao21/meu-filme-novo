@@ -37,9 +37,67 @@ class ExampleRobolectricTest {
       url = "https://example.com/movie.m3u8",
       title = "Filme Meu Drama",
       durationSeconds = 5400L,
-      isAbove15Min = true
+      isAbove15Min = true,
+      serverName = "WatchPlay",
+      serverClicked = true
     )
     assertTrue(fullMovie.isAbove15Min)
+    assertTrue(fullMovie.serverClicked)
+    assertEquals("WatchPlay", fullMovie.serverName)
     assertEquals("1h 30m", fullMovie.formattedDuration)
+  }
+
+  @Test
+  fun `repository derives movie title and ignores generic names`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val db = com.example.data.AppDatabase.getDatabase(context)
+    val testScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)
+    val repo = com.example.data.StreamRepository(db.historyDao(), testScope)
+
+    // Set movie title from catalog
+    repo.setCurrentMovieTitle("Batman: O Cavaleiro das Trevas")
+
+    // Ingest stream with generic site title "Baixar Vídeo Drama"
+    repo.onStreamCandidate(
+      url = "https://example.com/stream/movie.m3u8",
+      pageTitle = "Baixar Vídeo Drama",
+      pageUrl = "https://filmemeu.vercel.app",
+      initialDurationSec = 5400L
+    )
+
+    val detected = repo.detectedStreams.value
+    assertEquals(1, detected.size)
+    assertEquals("Batman: O Cavaleiro das Trevas", detected[0].title)
+    assertTrue(detected[0].isAbove15Min)
+
+    // Returning to catalog clears detected streams
+    repo.clearDetected()
+    assertTrue(repo.detectedStreams.value.isEmpty())
+    assertEquals(null, repo.currentMovieTitle.value)
+  }
+
+  @Test
+  fun `repository detects streams and applies filter`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val db = com.example.data.AppDatabase.getDatabase(context)
+    val testScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)
+    val repo = com.example.data.StreamRepository(db.historyDao(), testScope)
+
+    repo.setCurrentMovieTitle("Hope: O Primeiro Impacto")
+
+    repo.onStreamCandidate(
+      url = "https://example.com/stream/full_movie.m3u8",
+      pageTitle = "Hope",
+      pageUrl = "https://filmemeu.vercel.app",
+      initialDurationSec = 7200L
+    )
+
+    val detected = repo.detectedStreams.value
+    assertEquals(1, detected.size)
+    assertTrue(detected[0].isAbove15Min)
+    assertEquals("Hope: O Primeiro Impacto", detected[0].title)
+
+    repo.setFilterAbove15Min(true)
+    assertTrue(repo.filterAbove15Min.value)
   }
 }

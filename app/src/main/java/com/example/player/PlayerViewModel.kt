@@ -44,7 +44,12 @@ class PlayerViewModel(
     enum class WebKeyAction {
         PLAY_PAUSE,
         REWIND,
-        FORWARD
+        FORWARD,
+        DPAD_UP,
+        DPAD_DOWN,
+        DPAD_LEFT,
+        DPAD_RIGHT,
+        DPAD_CENTER
     }
 
     private val _webKeyEvents = kotlinx.coroutines.flow.MutableSharedFlow<WebKeyAction>(extraBufferCapacity = 1)
@@ -81,6 +86,19 @@ class PlayerViewModel(
                     }
                     Player.STATE_READY -> {
                         val duration = exoPlayer.duration.coerceAtLeast(0L)
+                        // Discard if stream has duration under 15 minutes (less than 900,000 ms)
+                        if (duration in 1..899_999L) {
+                            exoPlayer.stop()
+                            _playerState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    isPlaying = false,
+                                    currentStream = null,
+                                    errorMessage = "Vídeo com menos de 15 minutos ignorado."
+                                )
+                            }
+                            return
+                        }
                         _playerState.update {
                             it.copy(
                                 isLoading = false,
@@ -192,6 +210,10 @@ class PlayerViewModel(
     }
 
     fun stopPlayback() {
+        val current = _playerState.value.currentStream
+        if (current != null) {
+            repository.notifyPlayerClosed(current.url)
+        }
         exoPlayer.stop()
         _playerState.update {
             it.copy(

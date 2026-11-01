@@ -249,7 +249,9 @@ fun StreamCard(
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
                     border = BorderStroke(1.dp, CinemaCardBorder),
                     shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.testTag("copy_stream_${stream.id}")
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("copy_stream_${stream.id}")
                 ) {
                     Icon(
                         imageVector = if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
@@ -259,33 +261,9 @@ fun StreamCard(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = if (copied) "Copiado" else "Copiar",
+                        text = if (copied) "Copiado" else "Copiar Link",
                         fontSize = 12.sp,
                         color = if (copied) NeonGreen else TextSecondary
-                    )
-                }
-
-                OutlinedButton(
-                    onClick = {
-                        try {
-                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                setDataAndType(Uri.parse(stream.url), if (stream.isHls) "application/x-mpegURL" else "video/*")
-                            }
-                            context.startActivity(Intent.createChooser(intent, "Abrir com player externo"))
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Nenhum player externo compatível encontrado", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
-                    border = BorderStroke(1.dp, CinemaCardBorder),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.testTag("external_stream_${stream.id}")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.OpenInNew,
-                        contentDescription = "Abrir Externo",
-                        modifier = Modifier.size(16.dp),
-                        tint = TextSecondary
                     )
                 }
             }

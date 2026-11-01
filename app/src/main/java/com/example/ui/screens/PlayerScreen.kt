@@ -3,15 +3,26 @@ package com.example.ui.screens
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.view.KeyEvent
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -81,6 +92,40 @@ import com.example.ui.theme.TextSecondary
 import kotlinx.coroutines.delay
 import java.util.Locale
 
+@Composable
+fun TVPlayerFocusButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    shape: Shape = CircleShape,
+    containerColor: Color = Color.Transparent,
+    contentColor: Color = TextPrimary,
+    focusBorderColor: Color = NeonAmber,
+    focusRequester: FocusRequester? = null,
+    testTag: String = "",
+    content: @Composable () -> Unit
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    Surface(
+        onClick = onClick,
+        shape = shape,
+        color = containerColor,
+        contentColor = contentColor,
+        border = if (isFocused) BorderStroke(2.5.dp, focusBorderColor) else null,
+        modifier = modifier
+            .testTag(testTag)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .onFocusChanged { isFocused = it.isFocused }
+            .focusable()
+    ) {
+        Box(
+            modifier = Modifier.padding(8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            content()
+        }
+    }
+}
+
 @OptIn(UnstableApi::class)
 @Composable
 fun PlayerScreen(
@@ -114,10 +159,91 @@ fun PlayerScreen(
 
     val stream = state.currentStream!!
 
+    val playPauseFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(showControls) {
+        if (showControls) {
+            try {
+                playPauseFocusRequester.requestFocus()
+            } catch (e: Exception) {}
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(CinemaBlack)
+            .onKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown) {
+                    val code = keyEvent.nativeKeyEvent.keyCode
+                    if (!showControls) {
+                        when (code) {
+                            KeyEvent.KEYCODE_DPAD_CENTER,
+                            KeyEvent.KEYCODE_ENTER,
+                            KeyEvent.KEYCODE_NUMPAD_ENTER,
+                            KeyEvent.KEYCODE_SPACE,
+                            KeyEvent.KEYCODE_BUTTON_A,
+                            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                            KeyEvent.KEYCODE_MEDIA_PLAY,
+                            KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                                viewModel.togglePlayPause()
+                                showControls = true
+                                true
+                            }
+                            KeyEvent.KEYCODE_DPAD_LEFT,
+                            KeyEvent.KEYCODE_MEDIA_REWIND,
+                            KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD -> {
+                                viewModel.seekBackward10s()
+                                showControls = true
+                                true
+                            }
+                            KeyEvent.KEYCODE_DPAD_RIGHT,
+                            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
+                            KeyEvent.KEYCODE_MEDIA_STEP_FORWARD -> {
+                                viewModel.seekForward10s()
+                                showControls = true
+                                true
+                            }
+                            KeyEvent.KEYCODE_DPAD_UP,
+                            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                showControls = true
+                                true
+                            }
+                            KeyEvent.KEYCODE_BACK,
+                            KeyEvent.KEYCODE_ESCAPE -> {
+                                onNavigateBack()
+                                true
+                            }
+                            else -> false
+                        }
+                    } else {
+                        when (code) {
+                            KeyEvent.KEYCODE_BACK,
+                            KeyEvent.KEYCODE_ESCAPE -> {
+                                onNavigateBack()
+                                true
+                            }
+                            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                            KeyEvent.KEYCODE_MEDIA_PLAY,
+                            KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                                viewModel.togglePlayPause()
+                                true
+                            }
+                            KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                                viewModel.seekBackward10s()
+                                true
+                            }
+                            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                                viewModel.seekForward10s()
+                                true
+                            }
+                            else -> false
+                        }
+                    }
+                } else {
+                    false
+                }
+            }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
@@ -204,14 +330,14 @@ fun PlayerScreen(
 
         // Lock button (always visible in corner if locked)
         if (state.isLocked) {
-            IconButton(
+            TVPlayerFocusButton(
                 onClick = { viewModel.toggleLock() },
-                colors = IconButtonDefaults.iconButtonColors(containerColor = CinemaDark.copy(alpha = 0.7f)),
+                containerColor = CinemaDark.copy(alpha = 0.7f),
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(16.dp)
-                    .size(44.dp)
-                    .testTag("btn_unlock_player")
+                    .size(44.dp),
+                testTag = "btn_unlock_player"
             ) {
                 Icon(
                     imageVector = Icons.Default.Lock,
@@ -243,9 +369,9 @@ fun PlayerScreen(
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(
+                    TVPlayerFocusButton(
                         onClick = onNavigateBack,
-                        modifier = Modifier.testTag("player_btn_back")
+                        testTag = "player_btn_back"
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -282,9 +408,9 @@ fun PlayerScreen(
                     }
 
                     // Lock button
-                    IconButton(
+                    TVPlayerFocusButton(
                         onClick = { viewModel.toggleLock() },
-                        modifier = Modifier.testTag("player_btn_lock")
+                        testTag = "player_btn_lock"
                     ) {
                         Icon(
                             imageVector = Icons.Default.LockOpen,
@@ -295,9 +421,9 @@ fun PlayerScreen(
                     }
 
                     // Aspect ratio cycle
-                    IconButton(
+                    TVPlayerFocusButton(
                         onClick = { viewModel.cycleResizeMode() },
-                        modifier = Modifier.testTag("player_btn_aspect")
+                        testTag = "player_btn_aspect"
                     ) {
                         Icon(
                             imageVector = Icons.Default.AspectRatio,
@@ -308,10 +434,8 @@ fun PlayerScreen(
                     }
 
                     // Speed selector
-                    Surface(
-                        color = CinemaSurface.copy(alpha = 0.8f),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.clickable {
+                    TVPlayerFocusButton(
+                        onClick = {
                             val nextSpeed = when (state.playbackSpeed) {
                                 1.0f -> 1.25f
                                 1.25f -> 1.5f
@@ -320,19 +444,22 @@ fun PlayerScreen(
                                 else -> 1.0f
                             }
                             viewModel.setPlaybackSpeed(nextSpeed)
-                        }
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        containerColor = CinemaSurface.copy(alpha = 0.8f),
+                        testTag = "player_btn_speed"
                     ) {
                         Text(
                             text = "${state.playbackSpeed}x",
                             color = NeonCyan,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
 
                     // External player intent
-                    IconButton(
+                    TVPlayerFocusButton(
                         onClick = {
                             try {
                                 val intent = Intent(Intent.ACTION_VIEW).apply {
@@ -343,7 +470,7 @@ fun PlayerScreen(
                                 Toast.makeText(context, "Nenhum player externo disponível", Toast.LENGTH_SHORT).show()
                             }
                         },
-                        modifier = Modifier.testTag("player_btn_external")
+                        testTag = "player_btn_external"
                     ) {
                         Icon(
                             imageVector = Icons.Default.OpenInNew,
@@ -360,12 +487,12 @@ fun PlayerScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(28.dp)
                 ) {
-                    IconButton(
+                    TVPlayerFocusButton(
                         onClick = { viewModel.seekBackward10s() },
-                        modifier = Modifier
-                            .size(52.dp)
-                            .background(CinemaDark.copy(alpha = 0.6f), CircleShape)
-                            .testTag("player_btn_rewind")
+                        shape = CircleShape,
+                        containerColor = CinemaDark.copy(alpha = 0.6f),
+                        modifier = Modifier.size(56.dp),
+                        testTag = "player_btn_rewind"
                     ) {
                         Icon(
                             imageVector = Icons.Default.Replay10,
@@ -375,27 +502,28 @@ fun PlayerScreen(
                         )
                     }
 
-                    IconButton(
+                    TVPlayerFocusButton(
                         onClick = { viewModel.togglePlayPause() },
-                        modifier = Modifier
-                            .size(68.dp)
-                            .background(if (stream.isAbove15Min) NeonAmber else NeonCyan, CircleShape)
-                            .testTag("player_btn_play_pause")
+                        shape = CircleShape,
+                        containerColor = if (stream.isAbove15Min) NeonAmber else NeonCyan,
+                        focusRequester = playPauseFocusRequester,
+                        modifier = Modifier.size(72.dp),
+                        testTag = "player_btn_play_pause"
                     ) {
                         Icon(
                             imageVector = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                             contentDescription = if (state.isPlaying) "Pausar" else "Reproduzir",
                             tint = Color.Black,
-                            modifier = Modifier.size(38.dp)
+                            modifier = Modifier.size(40.dp)
                         )
                     }
 
-                    IconButton(
+                    TVPlayerFocusButton(
                         onClick = { viewModel.seekForward10s() },
-                        modifier = Modifier
-                            .size(52.dp)
-                            .background(CinemaDark.copy(alpha = 0.6f), CircleShape)
-                            .testTag("player_btn_forward")
+                        shape = CircleShape,
+                        containerColor = CinemaDark.copy(alpha = 0.6f),
+                        modifier = Modifier.size(56.dp),
+                        testTag = "player_btn_forward"
                     ) {
                         Icon(
                             imageVector = Icons.Default.Forward10,
@@ -414,6 +542,7 @@ fun PlayerScreen(
                         .background(Color.Black.copy(alpha = 0.6f))
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
+                    var isSliderFocused by remember { mutableStateOf(false) }
                     Slider(
                         value = if (isSeeking) seekProgress else state.progressFraction,
                         onValueChange = { frac ->
@@ -428,11 +557,37 @@ fun PlayerScreen(
                             }
                         },
                         colors = SliderDefaults.colors(
-                            thumbColor = if (stream.isAbove15Min) NeonAmber else NeonCyan,
-                            activeTrackColor = if (stream.isAbove15Min) NeonAmber else NeonCyan,
+                            thumbColor = if (isSliderFocused) NeonAmber else if (stream.isAbove15Min) NeonAmber else NeonCyan,
+                            activeTrackColor = if (isSliderFocused) NeonAmber else if (stream.isAbove15Min) NeonAmber else NeonCyan,
                             inactiveTrackColor = Color.White.copy(alpha = 0.2f)
                         ),
-                        modifier = Modifier.fillMaxWidth().testTag("player_timeline_slider")
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("player_timeline_slider")
+                            .border(
+                                border = if (isSliderFocused) BorderStroke(2.5.dp, NeonAmber) else BorderStroke(0.dp, Color.Transparent),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                            .onFocusChanged { isSliderFocused = it.isFocused }
+                            .focusable()
+                            .onKeyEvent { keyEvent ->
+                                if (keyEvent.type == KeyEventType.KeyDown) {
+                                    when (keyEvent.nativeKeyEvent.keyCode) {
+                                        KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                            viewModel.seekBackward10s()
+                                            true
+                                        }
+                                        KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                            viewModel.seekForward10s()
+                                            true
+                                        }
+                                        else -> false
+                                    }
+                                } else {
+                                    false
+                                }
+                            }
                     )
 
                     Row(

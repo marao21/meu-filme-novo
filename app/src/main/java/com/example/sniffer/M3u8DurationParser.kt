@@ -14,6 +14,7 @@ object M3u8DurationParser {
         .connectTimeout(6, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
         .followRedirects(true)
+        .followSslRedirects(true)
         .build()
 
     private val extinfPattern = Pattern.compile("""#EXTINF:([0-9.]+)[,\s]""")
@@ -32,10 +33,10 @@ object M3u8DurationParser {
             }
 
             val requestBuilder = Request.Builder().url(url)
-            if (!userAgent.isNullOrBlank()) {
-                requestBuilder.header("User-Agent", userAgent)
-            }
+            val ua = if (!userAgent.isNullOrBlank()) userAgent else "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 FilmeMeuApp/1.0"
+            requestBuilder.header("User-Agent", ua)
             requestBuilder.header("Referer", "https://filmemeu.vercel.app/")
+            requestBuilder.header("Origin", "https://filmemeu.vercel.app")
 
             val response = client.newCall(requestBuilder.build()).execute()
             if (!response.isSuccessful) {
@@ -98,10 +99,10 @@ object M3u8DurationParser {
         }
 
         val roundedSeconds = totalSeconds.toLong()
-        val isLive = !isEndListPresent && roundedSeconds == 0L
+        val isLive = !isEndListPresent
 
         return M3u8Info(
-            durationSeconds = roundedSeconds,
+            durationSeconds = if (isLive) 0L else roundedSeconds,
             isLive = isLive
         )
     }

@@ -84,29 +84,6 @@ object InjectedJs {
                 // Auto-fill TMDB key
                 $tmdbInjection
 
-                // Helper to find the center play button
-                function findCenterPlayButton() {
-                    var targets = document.querySelectorAll(
-                        'button, [role="button"], .vjs-big-play-button, [class*="play" i], [aria-label*="play" i], svg'
-                    );
-                    var cx = window.innerWidth / 2;
-                    var cy = window.innerHeight / 2;
-                    var best = null;
-                    var minDist = 999999;
-                    for (var j = 0; j < targets.length; j++) {
-                        var target = targets[j];
-                        var rect = target.getBoundingClientRect();
-                        if (rect.width >= 35 && rect.width <= 220 && rect.height >= 35 && rect.height <= 220) {
-                            var dist = Math.hypot(rect.left + rect.width / 2 - cx, rect.top + rect.height / 2 - cy);
-                            if (dist < minDist && dist < 260) {
-                                minDist = dist;
-                                best = target;
-                            }
-                        }
-                    }
-                    return best;
-                }
-
                 // Helper to enter fullscreen
                 function triggerFullscreen(v) {
                     try {
@@ -132,21 +109,7 @@ object InjectedJs {
                     } catch(e) {}
                 }
 
-                // Focus center play button on movie player screen
-                function focusCenterPlayButton() {
-                    try {
-                        var btn = findCenterPlayButton();
-                        if (btn) {
-                            btn.setAttribute('tabindex', '0');
-                            btn.focus();
-                            btn.style.outline = '4px solid #F59E0B';
-                            btn.style.boxShadow = '0 0 25px rgba(245, 158, 11, 0.9)';
-                            btn.style.borderRadius = '50%';
-                        }
-                    } catch(e) {}
-                }
-
-                // Web Player Remote & Keyboard Controller
+                // Web Player Remote & Keyboard Controller - only used when called by the app
                 window.__toggleWebPlayerPlayPause = function() {
                     try {
                         var videos = document.querySelectorAll('video');
@@ -154,27 +117,14 @@ object InjectedJs {
                             var v = videos[i];
                             if (v) {
                                 if (!v.paused && !v.ended) {
-                                    // VIDEO IS RUNNING -> PAUSE IT
                                     v.pause();
                                     return "paused";
                                 } else {
-                                    // VIDEO IS PAUSED -> PLAY AND LAUNCH FULLSCREEN
                                     v.play().catch(function(){});
                                     setTimeout(function() { triggerFullscreen(v); }, 180);
                                     return "playing_fullscreen";
                                 }
                             }
-                        }
-
-                        // Video hasn't started yet -> click center play button and go fullscreen!
-                        var centerBtn = findCenterPlayButton();
-                        if (centerBtn) {
-                            centerBtn.click();
-                            setTimeout(function() {
-                                var v = document.querySelector('video');
-                                triggerFullscreen(v);
-                            }, 250);
-                            return "clicked_center_fullscreen";
                         }
                     } catch(e) {}
                     return "none";
@@ -192,46 +142,404 @@ object InjectedJs {
                     } catch(e) {}
                 };
 
-                // Add keyboard shortcuts to page for wireless keyboards & TV Box remotes
-                if (!window.__filmemeu_keyboard_hooked) {
-                    window.__filmemeu_keyboard_hooked = true;
-                    window.addEventListener('keydown', function(e) {
-                        var tag = (e.target && e.target.tagName || '').toLowerCase();
-                        if (tag === 'input' || tag === 'textarea') return;
-
-                        // Space or Enter (code 13) or OK (code 13 or 32): Toggle Play/Pause and Fullscreen
-                        if (e.keyCode === 32 || e.code === 'Space' || e.keyCode === 13 || e.key === 'Enter' || e.keyCode === 179) {
-                            e.preventDefault();
-                            window.__toggleWebPlayerPlayPause();
-                        } else if (e.keyCode === 37) { // Left arrow: Seek -10s
-                            e.preventDefault();
-                            window.__seekWebPlayer(-10);
-                        } else if (e.keyCode === 39) { // Right arrow: Seek +10s
-                            e.preventDefault();
-                            window.__seekWebPlayer(10);
-                        }
-                    }, true);
-                }
-
-                // Automatically focus the center play button when arriving at the player screen
-                setInterval(function() {
+                // Ensure #np-tempo (00:00 / 00:00) is NEVER focusable and always skipped
+                (function() {
                     try {
-                        var videos = document.querySelectorAll('video');
-                        var isAnyPlaying = false;
-                        for (var i = 0; i < videos.length; i++) {
-                            if (!videos[i].paused && !videos[i].ended) {
-                                isAnyPlaying = true;
-                                break;
-                            }
-                        }
-                        if (!isAnyPlaying) {
-                            focusCenterPlayButton();
+                        var style = document.createElement('style');
+                        style.id = 'skip-tempo-style';
+                        style.textContent = [
+                            '#np-tempo, .np-tempo { outline: none !important; border: none !important; box-shadow: none !important; pointer-events: none !important; user-select: none !important; -webkit-user-select: none !important; }',
+                            '.np-bt:focus, .np-trilho:focus, #np-voltar:focus, #np-baixar:focus { outline: 3px solid #ffb300 !important; outline-offset: 2px !important; }'
+                        ].join('\n');
+                        if (document.head && !document.getElementById('skip-tempo-style')) {
+                            document.head.appendChild(style);
                         }
                     } catch(e) {}
-                }, 1000);
+                })();
+
+                function cleanTempoFocus() {
+                    try {
+                        var t = document.getElementById('np-tempo') || document.querySelector('.np-tempo');
+                        if (t) {
+                            t.removeAttribute('tabindex');
+                            t.setAttribute('tabindex', '-1');
+                            if (document.activeElement === t) {
+                                var next = document.getElementById('np-trilho') || document.getElementById('np-play');
+                                if (next) next.focus();
+                            }
+                        }
+                    } catch(e) {}
+                }
+                setInterval(cleanTempoFocus, 400);
+
+                // Precise TV Remote / Keyboard navigation for Web Player:
+                // Skips 00:00 / 00:00 and connects every button cleanly
+                document.addEventListener('keydown', function(e) {
+                    try {
+                        var cur = document.activeElement;
+                        if (!cur) return;
+                        var key = e.key;
+                        var code = e.keyCode;
+
+                        var isRight = (key === 'ArrowRight' || code === 39);
+                        var isLeft = (key === 'ArrowLeft' || code === 37);
+                        var isUp = (key === 'ArrowUp' || code === 38);
+                        var isDown = (key === 'ArrowDown' || code === 40);
+
+                        // If user is on np-play and presses Right -> skip np-tempo, jump straight to np-trilho (slider)!
+                        if (cur.id === 'np-play' && isRight) {
+                            var trilho = document.getElementById('np-trilho');
+                            if (trilho) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                trilho.focus();
+                                return;
+                            }
+                        }
+
+                        // If on np-trilho and presses Left -> jump back to np-play (skipping np-tempo)!
+                        if (cur.id === 'np-trilho' && isLeft) {
+                            var playBtn = document.getElementById('np-play');
+                            if (playBtn) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                playBtn.focus();
+                                return;
+                            }
+                        }
+
+                        // If on np-trilho and presses Right -> jump to np-mudo (volume)!
+                        if (cur.id === 'np-trilho' && isRight) {
+                            var mudoBtn = document.getElementById('np-mudo');
+                            if (mudoBtn) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                mudoBtn.focus();
+                                return;
+                            }
+                        }
+
+                        // If on np-mudo and presses Left -> jump to np-trilho!
+                        if (cur.id === 'np-mudo' && isLeft) {
+                            var trilho2 = document.getElementById('np-trilho');
+                            if (trilho2) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                trilho2.focus();
+                                return;
+                            }
+                        }
+
+                        // If on np-mudo and presses Right -> jump to np-cheia (fullscreen)!
+                        if (cur.id === 'np-mudo' && isRight) {
+                            var cheiaBtn = document.getElementById('np-cheia');
+                            if (cheiaBtn) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                cheiaBtn.focus();
+                                return;
+                            }
+                        }
+
+                        // If on np-cheia and presses Left -> jump to np-mudo!
+                        if (cur.id === 'np-cheia' && isLeft) {
+                            var mudoBtn2 = document.getElementById('np-mudo');
+                            if (mudoBtn2) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                mudoBtn2.focus();
+                                return;
+                            }
+                        }
+
+                        // If on any bottom control and presses Up -> jump to np-voltar
+                        if ((cur.id === 'np-play' || cur.id === 'np-trilho' || cur.id === 'np-mudo' || cur.id === 'np-cheia') && isUp) {
+                            var voltarBtn = document.getElementById('np-voltar');
+                            if (voltarBtn) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                voltarBtn.focus();
+                                return;
+                            }
+                        }
+
+                        // If on np-voltar and presses Right -> jump to np-baixar
+                        if (cur.id === 'np-voltar' && isRight) {
+                            var baixarBtn = document.getElementById('np-baixar');
+                            if (baixarBtn) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                baixarBtn.focus();
+                                return;
+                            }
+                        }
+
+                        // If on np-baixar and presses Left -> jump to np-voltar
+                        if (cur.id === 'np-baixar' && isLeft) {
+                            var voltarBtn2 = document.getElementById('np-voltar');
+                            if (voltarBtn2) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                voltarBtn2.focus();
+                                return;
+                            }
+                        }
+
+                        // If on np-voltar or np-baixar and presses Down -> jump to np-play
+                        if ((cur.id === 'np-voltar' || cur.id === 'np-baixar') && isDown) {
+                            var playBtn2 = document.getElementById('np-play');
+                            if (playBtn2) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                playBtn2.focus();
+                                return;
+                            }
+                        }
+
+                        // If focus ever lands on np-tempo, immediately skip to np-trilho
+                        if (cur.id === 'np-tempo' || (cur.classList && cur.classList.contains('np-tempo'))) {
+                            var nextTarget = document.getElementById('np-trilho') || document.getElementById('np-play');
+                            if (nextTarget) {
+                                e.preventDefault();
+                                nextTarget.focus();
+                            }
+                        }
+                    } catch(err) {}
+                }, true);
+
+                // Block external links, ads, and popups (e.g. Shopee, market://, intent://)
+                function isAllowedUrl(u) {
+                    if (!u || typeof u !== 'string') return true;
+                    var lower = u.toLowerCase();
+                    if (lower.indexOf('youtube.com') !== -1 ||
+                        lower.indexOf('youtu.be') !== -1 ||
+                        lower.indexOf('googlevideo.com') !== -1 ||
+                        lower.indexOf('ytimg.com') !== -1) {
+                        return true;
+                    }
+                    if (lower.indexOf('shopee') !== -1 ||
+                        lower.indexOf('market://') === 0 ||
+                        lower.indexOf('intent://') === 0 ||
+                        lower.indexOf('whatsapp://') === 0 ||
+                        lower.indexOf('telegram://') === 0 ||
+                        lower.indexOf('aliexpress') !== -1 ||
+                        lower.indexOf('mercadolivre') !== -1 ||
+                        lower.indexOf('doubleclick') !== -1 ||
+                        lower.indexOf('adsterra') !== -1 ||
+                        lower.indexOf('bet365') !== -1) {
+                        return false;
+                    }
+                    return true;
+                }
+
+                document.addEventListener('click', function(e) {
+                    var a = e.target.closest('a');
+                    if (a) {
+                        var href = a.getAttribute('href') || a.href || '';
+                        if (!isAllowedUrl(href)) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            return false;
+                        }
+                        if (a.target === '_blank') {
+                            a.target = '_self';
+                        }
+                    }
+                }, true);
 
                 if (window.__filmemeu_sniffer_active) return;
                 window.__filmemeu_sniffer_active = true;
+
+                window.__isUserInCatalog = false;
+                window.__isUserInMovie = false;
+                window.__currentMovieTitle = null;
+
+                function isGenericTitle(str) {
+                    if (!str || typeof str !== 'string') return true;
+                    var s = str.trim().toLowerCase();
+                    return s === '' ||
+                           s === 'baixar vídeo drama' ||
+                           s === 'baixar video drama' ||
+                           s.indexOf('baixar vídeo') === 0 ||
+                           s.indexOf('baixar video') === 0 ||
+                           s === 'filmemeu' ||
+                           s === 'untitled' ||
+                           s === 'filme detectado' ||
+                           s === 'reproduzindo' ||
+                           s === 'site aberto' ||
+                           s.length < 2;
+                }
+
+                function getBestMovieTitle(candidate) {
+                    if (window.__currentMovieTitle && !isGenericTitle(window.__currentMovieTitle)) {
+                        return window.__currentMovieTitle;
+                    }
+                    var dt = document.getElementById('detalhe-titulo');
+                    if (dt && dt.textContent && !isGenericTitle(dt.textContent)) {
+                        return dt.textContent.trim();
+                    }
+                    var npt = document.getElementById('np-titulo');
+                    if (npt && npt.textContent && !isGenericTitle(npt.textContent)) {
+                        return npt.textContent.trim();
+                    }
+                    var prev = document.getElementById('previa-titulo');
+                    if (prev && prev.textContent && !isGenericTitle(prev.textContent)) {
+                        return prev.textContent.trim();
+                    }
+                    if (candidate && !isGenericTitle(candidate)) {
+                        return candidate.trim();
+                    }
+                    return "";
+                }
+
+                function checkCatalogAndMovieState() {
+                    try {
+                        var catalog = document.getElementById('catalog');
+                        var siteFrame = document.getElementById('site-frame');
+                        var nossoPlayer = document.getElementById('nosso-player');
+                        var detalhe = document.getElementById('detalhe');
+                        var htmlNoTitulo = document.documentElement.classList.contains('no-titulo');
+
+                        var catalogVisible = catalog && !catalog.classList.contains('hidden');
+                        var frameVisible = siteFrame && !siteFrame.classList.contains('hidden');
+                        var npVisible = nossoPlayer && !nossoPlayer.classList.contains('hidden');
+                        var detalheVisible = detalhe && !detalhe.classList.contains('hidden');
+
+                        if (detalhe && detalhe.querySelector('#detalhe-titulo')) {
+                            var dtText = detalhe.querySelector('#detalhe-titulo').textContent;
+                            if (dtText && !isGenericTitle(dtText)) {
+                                window.__currentMovieTitle = dtText.trim();
+                            }
+                        }
+                        if (nossoPlayer && nossoPlayer.querySelector('#np-titulo')) {
+                            var nptText = nossoPlayer.querySelector('#np-titulo').textContent;
+                            if (nptText && !isGenericTitle(nptText)) {
+                                window.__currentMovieTitle = nptText.trim();
+                            }
+                        }
+
+                        // detalheVisible is true when viewing the movie synopsis, poster, and trailer
+                        var inMovie = frameVisible || npVisible || detalheVisible;
+                        var inCatalog = catalogVisible && !frameVisible && !npVisible && !detalheVisible && !htmlNoTitulo;
+
+                        if (inCatalog) {
+                            if (window.__isUserInMovie || !window.__isUserInCatalog) {
+                                window.__isUserInMovie = false;
+                                window.__isUserInCatalog = true;
+                                window.__currentMovieTitle = null;
+                                if (window.AndroidBridge && window.AndroidBridge.onNavigatedToCatalog) {
+                                    window.AndroidBridge.onNavigatedToCatalog();
+                                }
+                            }
+                        } else if (inMovie) {
+                            if (!window.__isUserInMovie) {
+                                window.__isUserInMovie = true;
+                                window.__isUserInCatalog = false;
+                                var title = getBestMovieTitle();
+                                if (window.AndroidBridge && window.AndroidBridge.onMovieStateChanged) {
+                                    window.AndroidBridge.onMovieStateChanged(true, title);
+                                }
+                            }
+                        }
+                    } catch(e) {}
+                }
+                window.__checkCatalogState = checkCatalogAndMovieState;
+                setInterval(checkCatalogAndMovieState, 400);
+
+                window.__goToCatalog = function() {
+                    try {
+                        if (typeof voltarParaCatalogo === 'function') {
+                            try { voltarParaCatalogo(false); } catch(e) {}
+                        }
+                        var btns = [
+                            document.getElementById('btn-catalog'),
+                            document.getElementById('detalhe-voltar'),
+                            document.getElementById('np-voltar'),
+                            document.querySelector('.btn-voltar')
+                        ];
+                        btns.forEach(function(b) {
+                            if (b) { try { b.click(); } catch(e) {} }
+                        });
+
+                        var sf = document.getElementById('site-frame');
+                        if (sf) {
+                            sf.classList.add('hidden');
+                            var ifr = sf.querySelector('iframe');
+                            if (ifr) ifr.src = 'about:blank';
+                        }
+                        var np = document.getElementById('nosso-player');
+                        if (np) {
+                            np.classList.add('hidden');
+                            var v = np.querySelector('video');
+                            if (v) { v.pause(); v.src = ''; }
+                        }
+                        var dt = document.getElementById('detalhe');
+                        if (dt) dt.classList.add('hidden');
+
+                        var cat = document.getElementById('catalog');
+                        if (cat) cat.classList.remove('hidden');
+
+                        document.documentElement.classList.remove('no-titulo');
+
+                        window.__isUserInMovie = false;
+                        window.__isUserInCatalog = true;
+                        window.__currentMovieTitle = null;
+
+                        if (window.AndroidBridge && window.AndroidBridge.onNavigatedToCatalog) {
+                            window.AndroidBridge.onNavigatedToCatalog();
+                        }
+                    } catch(e) {}
+                };
+
+                document.addEventListener('click', function(e) {
+                    try {
+                        var toCatalog = e.target.closest('#btn-catalog, #np-voltar, #detalhe-voltar');
+                        if (toCatalog) {
+                            window.__isUserInMovie = false;
+                            window.__isUserInCatalog = true;
+                            window.__currentMovieTitle = null;
+                            if (window.AndroidBridge && window.AndroidBridge.onNavigatedToCatalog) {
+                                window.AndroidBridge.onNavigatedToCatalog();
+                            }
+                            return;
+                        }
+
+                        var card = e.target.closest('.cat-card, .poster');
+                        if (card) {
+                            var titleEl = card.querySelector('.cat-title, .poster-title, h3, h4');
+                            var t = titleEl ? titleEl.textContent : (card.getAttribute('title') || '');
+                            if (t && !isGenericTitle(t)) {
+                                var cleanT = t.trim();
+                                window.__currentMovieTitle = cleanT;
+                                if (window.AndroidBridge && window.AndroidBridge.onMovieSelected) {
+                                    window.AndroidBridge.onMovieSelected(cleanT);
+                                }
+                            }
+                            return;
+                        }
+
+                        var btnAssistir = e.target.closest('#detalhe-assistir');
+                        if (btnAssistir) {
+                            var dt = document.getElementById('detalhe-titulo');
+                            var t2 = (dt && dt.textContent ? dt.textContent.trim() : '') || window.__currentMovieTitle;
+                            if (t2 && !isGenericTitle(t2)) {
+                                window.__currentMovieTitle = t2;
+                                window.__isUserInMovie = true;
+                                window.__isUserInCatalog = false;
+                                if (window.AndroidBridge && window.AndroidBridge.onMovieStateChanged) {
+                                    window.AndroidBridge.onMovieStateChanged(true, t2);
+                                }
+                            }
+                        }
+                    } catch(err) {}
+                }, true);
+
+                window.addEventListener('popstate', function() {
+                    setTimeout(checkCatalogAndMovieState, 150);
+                });
+                window.addEventListener('hashchange', function() {
+                    setTimeout(checkCatalogAndMovieState, 150);
+                });
 
                 function notifyNative(url, title, durationSec) {
                     if (!url || typeof url !== 'string') return;
@@ -240,11 +548,23 @@ object InjectedJs {
                         if (lower.indexOf('youtube.com') !== -1 || lower.indexOf('googlevideo.com') !== -1) return;
                         if (lower.indexOf('.ts') !== -1 && lower.indexOf('.m3u8') === -1) return;
                         
-                        var docTitle = title || document.title || "Filme Detectado";
-                        docTitle = docTitle.replace(/[\/\\:*?"<>|]/g, "").trim();
+                        var catalog = document.getElementById('catalog');
+                        var siteFrame = document.getElementById('site-frame');
+                        var nossoPlayer = document.getElementById('nosso-player');
+                        var isCatalog = catalog && !catalog.classList.contains('hidden') &&
+                                        (!siteFrame || siteFrame.classList.contains('hidden')) &&
+                                        (!nossoPlayer || nossoPlayer.classList.contains('hidden'));
+                        if (isCatalog) {
+                            return;
+                        }
+                        
+                        var movieTitle = getBestMovieTitle(title);
+                        if (isGenericTitle(movieTitle)) {
+                            movieTitle = "";
+                        }
                         
                         if (window.AndroidBridge && window.AndroidBridge.onVideoFound) {
-                            window.AndroidBridge.onVideoFound(url, docTitle, durationSec || 0);
+                            window.AndroidBridge.onVideoFound(url, movieTitle, durationSec || 0);
                         }
                     } catch(e) {}
                 }
@@ -310,11 +630,9 @@ object InjectedJs {
                                     if (node.nodeType === 1) {
                                         if (node.tagName === 'VIDEO') {
                                             inspectVideo(node);
-                                            focusCenterPlayButton();
                                         } else if (node.querySelectorAll) {
                                             var innerVideos = node.querySelectorAll('video');
                                             innerVideos.forEach(inspectVideo);
-                                            if (innerVideos.length > 0) focusCenterPlayButton();
                                         }
                                     }
                                 });

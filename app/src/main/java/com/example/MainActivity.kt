@@ -32,53 +32,39 @@ class MainActivity : ComponentActivity() {
         // When player is active, route TV Box / Chromecast remote controls directly
         if (playerState.currentStream != null) {
             when (keyCode) {
-                KeyEvent.KEYCODE_DPAD_CENTER,
-                KeyEvent.KEYCODE_ENTER,
-                KeyEvent.KEYCODE_NUMPAD_ENTER,
-                KeyEvent.KEYCODE_SPACE,
-                KeyEvent.KEYCODE_BUTTON_A,
                 KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
                 KeyEvent.KEYCODE_MEDIA_PLAY,
                 KeyEvent.KEYCODE_MEDIA_PAUSE -> {
                     playerViewModel.togglePlayPause()
                     return true
                 }
-                KeyEvent.KEYCODE_DPAD_LEFT,
-                KeyEvent.KEYCODE_MEDIA_REWIND,
-                KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD -> {
+                KeyEvent.KEYCODE_MEDIA_REWIND -> {
                     playerViewModel.seekBackward10s()
                     return true
                 }
-                KeyEvent.KEYCODE_DPAD_RIGHT,
-                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
-                KeyEvent.KEYCODE_MEDIA_STEP_FORWARD -> {
+                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
                     playerViewModel.seekForward10s()
                     return true
                 }
-                KeyEvent.KEYCODE_BACK -> {
+                KeyEvent.KEYCODE_BACK,
+                KeyEvent.KEYCODE_ESCAPE -> {
                     playerViewModel.stopPlayback()
                     return true
                 }
             }
         } else {
-            // When browsing the website directly, control the web player from remote/keyboard
+            // When browsing, let D-pad, Enter, and navigation keys pass directly to the WebView
             when (keyCode) {
-                KeyEvent.KEYCODE_DPAD_CENTER,
-                KeyEvent.KEYCODE_ENTER,
-                KeyEvent.KEYCODE_NUMPAD_ENTER,
-                KeyEvent.KEYCODE_SPACE,
                 KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
                 KeyEvent.KEYCODE_MEDIA_PLAY,
                 KeyEvent.KEYCODE_MEDIA_PAUSE -> {
                     playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.PLAY_PAUSE)
                     return true
                 }
-                KeyEvent.KEYCODE_DPAD_LEFT,
                 KeyEvent.KEYCODE_MEDIA_REWIND -> {
                     playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.REWIND)
                     return true
                 }
-                KeyEvent.KEYCODE_DPAD_RIGHT,
                 KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
                     playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.FORWARD)
                     return true
