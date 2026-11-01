@@ -1,0 +1,77 @@
+name: APK de debug
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Gerar APK de debug
+    runs-on: ubuntu-latest
+    permissions:
+      # Necessário para o GITHUB_TOKEN poder criar e atualizar a release.
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # O repositório não tem gradlew nem gradle-wrapper.jar (só o .properties),
+      # então ./gradlew não existe no CI. Esta action instala o Gradle da versão
+      # pedida pelo wrapper.properties e já traz o cache do Gradle.
+      - name: Instalar Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # debug.keystore é gitignored, mas o signingConfig "debugConfig" do
+      # app/build.gradle.kts aponta para ele, e sem o arquivo a tarefa
+      # validateSigningDebug falha. Uma chave de debug descartável resolve:
+      # APK de debug não precisa de assinatura real nem de segredo.
+      - name: Gerar chave de debug
+        run: |
+          keytool -genkeypair \
+            -keystore debug.keystore \
+            -storepass android \
+            -keypass android \
+            -alias androiddebugkey \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Compilar APK de debug
+        run: gradle assembleDebug --stacktrace
+
+      - name: Renomear APK
+        run: cp app/build/outputs/apk/debug/*.apk meu-filme-novo-debug.apk
+
+      - name: Publicar APK como artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: meu-filme-novo-debug-apk
+          path: meu-filme-novo-debug.apk
+          retention-days: 30
+
+      # A release rolante dá um endereço de download fixo, que o artefato não
+      # tem. Só em push: um pull request de fora não deve publicar release.
+      - name: Publicar APK na release apk-latest
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          notes="APK de debug do commit ${GITHUB_SHA:0:7}, gerado em $(date -u '+%d/%m/%Y %H:%M UTC') a partir da branch ${GITHUB_REF_NAME}."
+          # Cria a release na primeira vez; nas seguintes ela já existe e o
+          # erro é esperado, então só atualizamos as notas.
+          gh release create apk-latest \
+            --target "$GITHUB_SHA" \
+            --title "APK de debug (último build)" \
+            --notes "$notes" \
+            --prerelease \
+            || gh release edit apk-latest --notes "$notes"
+          gh release upload apk-latest meu-filme-novo-debug.apk --clobber
