@@ -46,13 +46,16 @@ fun DetectedStreamBanner(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Only display banner for genuine movies (> 15 min) - unknown duration streams are commercials and must NEVER be shown
+    val isValidMovie = stream != null && stream.isAbove15Min && stream.durationSeconds >= 900L
+
     AnimatedVisibility(
-        visible = stream != null,
+        visible = isValidMovie,
         enter = slideInVertically(initialOffsetY = { it }),
         exit = slideOutVertically(targetOffsetY = { it }),
         modifier = modifier
     ) {
-        if (stream != null) {
+        if (stream != null && isValidMovie) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -80,7 +83,7 @@ fun DetectedStreamBanner(
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (stream.isAbove15Min) "★ Filme Encontrado (> 15m)" else "Novo Stream Detectado",
+                            text = "★ Filme Encontrado (> 15m)",
                             color = NeonAmber,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold

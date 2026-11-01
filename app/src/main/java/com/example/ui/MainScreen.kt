@@ -29,9 +29,16 @@ fun MainScreen(
     val playerState by playerViewModel.playerState.collectAsState()
     var showStreamsDialog by remember { mutableStateOf(false) }
 
-    // Hardware back press: if playing, exit back to browser
-    BackHandler(enabled = playerState.currentStream != null) {
+    val isPlayerActive = playerState.currentStream != null
+
+    val exitPlayerToMovieSelection: () -> Unit = {
         playerViewModel.stopPlayback()
+        playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.RETURN_TO_AUDIO_SELECTION)
+    }
+
+    // Hardware back press: if playing, exit back to browser and return to movie audio selection (Image 2)
+    BackHandler(enabled = isPlayerActive) {
+        exitPlayerToMovieSelection()
     }
 
     Box(
@@ -53,19 +60,15 @@ fun MainScreen(
 
         // Fullscreen Native TV Player overlay
         AnimatedVisibility(
-            visible = playerState.currentStream != null,
+            visible = isPlayerActive,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.fillMaxSize()
         ) {
             PlayerScreen(
                 viewModel = playerViewModel,
-                onNavigateBack = {
-                    playerViewModel.stopPlayback()
-                },
-                onNavigateToBrowse = {
-                    playerViewModel.stopPlayback()
-                },
+                onNavigateBack = exitPlayerToMovieSelection,
+                onNavigateToBrowse = exitPlayerToMovieSelection,
                 modifier = Modifier.fillMaxSize()
             )
         }

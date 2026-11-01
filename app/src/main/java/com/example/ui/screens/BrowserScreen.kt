@@ -137,18 +137,21 @@ fun BrowserScreen(
         )
     }
 
-    // Keep latest banner stream active and restore it when user returns from player into a movie
+    val isNativePlayerActive = playerViewModel.playerState.collectAsState().value.currentStream != null
+
+    // Keep latest banner stream active - strictly for genuine movies (> 15m). Never commercials with unknown duration!
     LaunchedEffect(isUserInMovie, detectedList) {
         if (!isUserInMovie) {
             latestBannerStream = null
-        } else if (latestBannerStream == null && detectedList.isNotEmpty()) {
-            latestBannerStream = detectedList.firstOrNull { it.isAbove15Min } ?: detectedList.firstOrNull()
+        } else {
+            val valid = detectedList.firstOrNull { it.isAbove15Min && it.durationSeconds >= 900L }
+            latestBannerStream = valid
         }
     }
 
     LaunchedEffect(Unit) {
         repository.newMovieAlert.collectLatest { stream ->
-            if (isUserInMovie) {
+            if (isUserInMovie && stream.isAbove15Min && stream.durationSeconds >= 900L) {
                 latestBannerStream = stream
             }
         }
@@ -158,6 +161,12 @@ fun BrowserScreen(
     LaunchedEffect(webViewInstance) {
         playerViewModel.webKeyEvents.collectLatest { action ->
             when (action) {
+                PlayerViewModel.WebKeyAction.RETURN_TO_AUDIO_SELECTION -> {
+                    webViewInstance?.evaluateJavascript(
+                        "if(window.__returnToMovieAudioSelection) { window.__returnToMovieAudioSelection(); }",
+                        null
+                    )
+                }
                 PlayerViewModel.WebKeyAction.PLAY_PAUSE -> {
                     webViewInstance?.evaluateJavascript(
                         "if(window.__toggleWebPlayerPlayPause) { window.__toggleWebPlayerPlayPause(); }",
@@ -183,9 +192,9 @@ fun BrowserScreen(
         }
     }
 
-    // Back handling: if web fullscreen is active, exit it.
+    // Back handling: only active when native player overlay is NOT active
     // If inside a movie, 1 single click returns cleanly to catalog without stepping through iframe redirect history!
-    BackHandler {
+    BackHandler(enabled = !isNativePlayerActive) {
         if (customFullscreenView != null) {
             customViewCallback?.onCustomViewHidden()
             customFullscreenView = null
@@ -657,9 +666,10 @@ fun BrowserScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Detected Movie Banner at the bottom of the browser - only shown when inside a movie
+                // Detected Movie Banner at the bottom of the browser - only shown when inside a movie and stream has valid duration (> 15m)
+                // Commercials/ads with unknown duration are strictly excluded
                 DetectedStreamBanner(
-                    stream = if (isUserInMovie) latestBannerStream else null,
+                    stream = if (isUserInMovie && latestBannerStream?.isAbove15Min == true && (latestBannerStream?.durationSeconds ?: 0L) >= 900L) latestBannerStream else null,
                     onPlay = { stream ->
                         onPlayStream(stream)
                     },

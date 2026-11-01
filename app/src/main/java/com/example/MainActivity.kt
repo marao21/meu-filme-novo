@@ -49,6 +49,7 @@ class MainActivity : ComponentActivity() {
                 KeyEvent.KEYCODE_BACK,
                 KeyEvent.KEYCODE_ESCAPE -> {
                     playerViewModel.stopPlayback()
+                    playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.RETURN_TO_AUDIO_SELECTION)
                     return true
                 }
             }

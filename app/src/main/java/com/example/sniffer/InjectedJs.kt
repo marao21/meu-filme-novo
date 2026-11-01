@@ -446,6 +446,41 @@ object InjectedJs {
                 window.__checkCatalogState = checkCatalogAndMovieState;
                 setInterval(checkCatalogAndMovieState, 400);
 
+                window.__returnToMovieAudioSelection = function() {
+                    try {
+                        var np = document.getElementById('nosso-player');
+                        if (np) {
+                            np.classList.add('hidden');
+                            var v = np.querySelector('video');
+                            if (v) { v.pause(); v.src = ''; }
+                        }
+                        var sf = document.getElementById('site-frame');
+                        if (sf) {
+                            sf.classList.add('hidden');
+                            var ifr = sf.querySelector('iframe');
+                            if (ifr) ifr.src = 'about:blank';
+                        }
+                        var dt = document.getElementById('detalhe');
+                        if (dt) {
+                            dt.classList.remove('hidden');
+                        }
+                        var cat = document.getElementById('catalog');
+                        if (cat) {
+                            cat.classList.add('hidden');
+                        }
+                        document.documentElement.classList.add('no-titulo');
+
+                        window.__isUserInMovie = true;
+                        window.__isUserInCatalog = false;
+
+                        var dtTitle = document.getElementById('detalhe-titulo');
+                        var title = (dtTitle && dtTitle.textContent) ? dtTitle.textContent.trim() : window.__currentMovieTitle;
+                        if (window.AndroidBridge && window.AndroidBridge.onMovieStateChanged) {
+                            window.AndroidBridge.onMovieStateChanged(true, title);
+                        }
+                    } catch(e) {}
+                };
+
                 window.__goToCatalog = function() {
                     try {
                         if (typeof voltarParaCatalogo === 'function') {
@@ -454,7 +489,6 @@ object InjectedJs {
                         var btns = [
                             document.getElementById('btn-catalog'),
                             document.getElementById('detalhe-voltar'),
-                            document.getElementById('np-voltar'),
                             document.querySelector('.btn-voltar')
                         ];
                         btns.forEach(function(b) {
@@ -493,13 +527,26 @@ object InjectedJs {
 
                 document.addEventListener('click', function(e) {
                     try {
-                        var toCatalog = e.target.closest('#btn-catalog, #np-voltar, #detalhe-voltar');
+                        var toCatalog = e.target.closest('#btn-catalog, #detalhe-voltar');
                         if (toCatalog) {
                             window.__isUserInMovie = false;
                             window.__isUserInCatalog = true;
                             window.__currentMovieTitle = null;
                             if (window.AndroidBridge && window.AndroidBridge.onNavigatedToCatalog) {
                                 window.AndroidBridge.onNavigatedToCatalog();
+                            }
+                            return;
+                        }
+
+                        var npVoltar = e.target.closest('#np-voltar');
+                        if (npVoltar) {
+                            // Returning from web player to movie audio selection (Image 2)
+                            window.__isUserInMovie = true;
+                            window.__isUserInCatalog = false;
+                            var dtTitle = document.getElementById('detalhe-titulo');
+                            var title = (dtTitle && dtTitle.textContent) ? dtTitle.textContent.trim() : window.__currentMovieTitle;
+                            if (window.AndroidBridge && window.AndroidBridge.onMovieStateChanged) {
+                                window.AndroidBridge.onMovieStateChanged(true, title);
                             }
                             return;
                         }

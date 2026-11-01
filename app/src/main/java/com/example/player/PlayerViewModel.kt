@@ -49,7 +49,8 @@ class PlayerViewModel(
         DPAD_DOWN,
         DPAD_LEFT,
         DPAD_RIGHT,
-        DPAD_CENTER
+        DPAD_CENTER,
+        RETURN_TO_AUDIO_SELECTION
     }
 
     private val _webKeyEvents = kotlinx.coroutines.flow.MutableSharedFlow<WebKeyAction>(extraBufferCapacity = 1)
