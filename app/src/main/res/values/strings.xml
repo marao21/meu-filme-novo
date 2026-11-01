@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">FilmeMeu</string>
+    <string name="nav_browse">Navegar</string>
+    <string name="nav_player">Player</string>
+    <string name="nav_detected">Detectados</string>
+    <string name="nav_history">Histórico</string>
+    <string name="search_hint">Buscar ou digitar URL...</string>
+    <string name="filter_15min">Acima de 15 min</string>
+    <string name="detected_badge">Streams M3U8</string>
+    <string name="play_now">Assistir</string>
+    <string name="copy_link">Copiar Link</string>
+    <string name="link_copied">Link copiado com sucesso!</string>
+    <string name="open_external">Abrir no VLC/Externo</string>
+    <string name="no_videos_found">Nenhum stream detectado ainda nesta página</string>
+    <string name="browse_filmemeu">Ir para FilmeMeu</string>
+</resources>

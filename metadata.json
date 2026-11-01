@@ -1,0 +1,6 @@
+{
+  "name": "FilmeMeu",
+  "description": "Navegador de filmes e séries com detector inteligente de streams M3U8 e MP4, filtro acima de 15 minutos e reprodutor HLS integrado.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
