@@ -470,31 +470,20 @@ fun PlayerScreen(
                         )
                     }
 
-                    Column(modifier = Modifier.weight(1f).padding(horizontal = 6.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp),
+                        verticalArrangement = Arrangement.Center
+                    ) {
                         Text(
                             text = stream.title,
                             color = TextPrimary,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
+                            fontSize = 15.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = stream.format,
-                                color = if (stream.isHls) NeonCyan else NeonAmber,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            if (stream.isAbove15Min) {
-                                Text(
-                                    text = " • Filme/Episódio (> 15m)",
-                                    color = NeonAmber,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
                     }
 
                     // Lock button
