@@ -290,9 +290,64 @@ fun PlayerScreen(
                     )
                     player = viewModel.exoPlayer
                     useController = false
-                    isFocusable = false
-                    isFocusableInTouchMode = false
-                    descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+                    isFocusable = true
+                    isFocusableInTouchMode = true
+                    descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+                    setOnKeyListener { _, keyCode, event ->
+                        if (event.action == KeyEvent.ACTION_DOWN) {
+                            viewModel.triggerShowControls()
+                            when (keyCode) {
+                                KeyEvent.KEYCODE_DPAD_CENTER,
+                                KeyEvent.KEYCODE_ENTER,
+                                KeyEvent.KEYCODE_NUMPAD_ENTER,
+                                KeyEvent.KEYCODE_SPACE,
+                                KeyEvent.KEYCODE_BUTTON_A,
+                                KeyEvent.KEYCODE_BUTTON_SELECT,
+                                KeyEvent.KEYCODE_BUTTON_START,
+                                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                                    viewModel.togglePlayPause()
+                                    true
+                                }
+                                KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                                    viewModel.play()
+                                    true
+                                }
+                                KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                                    viewModel.pause()
+                                    true
+                                }
+                                KeyEvent.KEYCODE_DPAD_LEFT,
+                                KeyEvent.KEYCODE_MEDIA_REWIND,
+                                KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD,
+                                KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                                    viewModel.seekBackward10s()
+                                    true
+                                }
+                                KeyEvent.KEYCODE_DPAD_RIGHT,
+                                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
+                                KeyEvent.KEYCODE_MEDIA_STEP_FORWARD,
+                                KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                                    viewModel.seekForward10s()
+                                    true
+                                }
+                                KeyEvent.KEYCODE_BACK,
+                                KeyEvent.KEYCODE_ESCAPE,
+                                KeyEvent.KEYCODE_BUTTON_B -> {
+                                    onNavigateBack()
+                                    true
+                                }
+                                KeyEvent.KEYCODE_DPAD_UP,
+                                KeyEvent.KEYCODE_DPAD_DOWN,
+                                KeyEvent.KEYCODE_MENU,
+                                KeyEvent.KEYCODE_INFO -> {
+                                    true
+                                }
+                                else -> false
+                            }
+                        } else true
+                    }
+                    requestFocus()
+                    keepScreenOn = true
                     resizeMode = when (state.resizeMode) {
                         1 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
                         2 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
@@ -302,9 +357,10 @@ fun PlayerScreen(
             },
             update = { playerView ->
                 playerView.player = viewModel.exoPlayer
-                playerView.isFocusable = false
-                playerView.isFocusableInTouchMode = false
-                playerView.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+                playerView.isFocusable = true
+                playerView.isFocusableInTouchMode = true
+                playerView.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+                playerView.keepScreenOn = true
                 playerView.resizeMode = when (state.resizeMode) {
                     1 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
                     2 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM

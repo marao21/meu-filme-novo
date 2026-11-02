@@ -166,6 +166,32 @@ object InjectedJs {
                     } catch(e) {}
                 };
 
+                // TV Remote & Keyboard Controller - OK and Navigation for TV Box
+                window.__handleTvRemoteOk = function() {
+                    try {
+                        var detalhe = document.getElementById('detalhe');
+                        var isDetalheOpen = detalhe && !detalhe.classList.contains('hidden') && detalhe.style.display !== 'none';
+                        if (isDetalheOpen) {
+                            var btnAssistir = document.getElementById('detalhe-assistir') ||
+                                document.querySelector('#detalhe-assistir, .detalhe-assistir, #btn-play-filme');
+                            if (btnAssistir) {
+                                btnAssistir.click();
+                                return "assistir_clicked";
+                            }
+                        }
+                        var npPlay = document.getElementById('np-play');
+                        if (npPlay) {
+                            npPlay.click();
+                            return "np_play_clicked";
+                        }
+                        if (document.activeElement && typeof document.activeElement.click === 'function') {
+                            document.activeElement.click();
+                            return "active_clicked";
+                        }
+                    } catch(e) {}
+                    return "none";
+                };
+
                 // Ensure #np-tempo (00:00 / 00:00) is NEVER focusable and always skipped
                 (function() {
                     try {
@@ -173,7 +199,7 @@ object InjectedJs {
                         style.id = 'skip-tempo-style';
                         style.textContent = [
                             '#np-tempo, .np-tempo { outline: none !important; border: none !important; box-shadow: none !important; pointer-events: none !important; user-select: none !important; -webkit-user-select: none !important; }',
-                            '.np-bt:focus, .np-trilho:focus, #np-voltar:focus, #np-baixar:focus { outline: 3px solid #ffb300 !important; outline-offset: 2px !important; }'
+                            '#detalhe-assistir:focus, .btn-assistir:focus, .np-bt:focus, .np-trilho:focus, #np-voltar:focus, #np-baixar:focus, [tabindex="0"]:focus, .card:focus, .filme-card:focus { outline: 3px solid #ffb300 !important; outline-offset: 2px !important; }'
                         ].join('\n');
                         if (document.head && !document.getElementById('skip-tempo-style')) {
                             document.head.appendChild(style);
@@ -190,6 +216,14 @@ object InjectedJs {
                             if (document.activeElement === t) {
                                 var next = document.getElementById('np-trilho') || document.getElementById('np-play');
                                 if (next) next.focus();
+                            }
+                        }
+                        // Ensure #detalhe-assistir is focusable on TV Box
+                        var dt = document.getElementById('detalhe');
+                        if (dt && !dt.classList.contains('hidden')) {
+                            var btn = document.getElementById('detalhe-assistir');
+                            if (btn && !btn.hasAttribute('tabindex')) {
+                                btn.setAttribute('tabindex', '0');
                             }
                         }
                     } catch(e) {}

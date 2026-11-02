@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
@@ -84,6 +85,7 @@ class PlayerViewModel(
             .setMediaSourceFactory(mediaSourceFactory)
             .setSeekBackIncrementMs(10000)
             .setSeekForwardIncrementMs(10000)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
 
         exoPlayer.addListener(object : Player.Listener {

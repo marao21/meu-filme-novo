@@ -236,8 +236,14 @@ fun BrowserScreen(
                         null
                     )
                 }
+                PlayerViewModel.WebKeyAction.DPAD_CENTER -> {
+                    webViewInstance?.evaluateJavascript(
+                        "if(window.__handleTvRemoteOk) { window.__handleTvRemoteOk(); }",
+                        null
+                    )
+                }
                 else -> {
-                    // D-pad navigation handled naturally by WebView and setas.js
+                    // D-pad navigation handled naturally by WebView spatial navigation
                 }
             }
         }
@@ -513,6 +519,9 @@ fun BrowserScreen(
                                 mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                                 userAgentString = APP_USER_AGENT
                             }
+                            isFocusable = true
+                            isFocusableInTouchMode = true
+                            keepScreenOn = true
 
                             // JavaScript Native Bridge - Thread-safe
                             addJavascriptInterface(object {
