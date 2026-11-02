@@ -225,6 +225,23 @@ object InjectedJs {
                             if (btn && !btn.hasAttribute('tabindex')) {
                                 btn.setAttribute('tabindex', '0');
                             }
+                            var dtTitle = document.getElementById('detalhe-titulo');
+                            if (dtTitle && dtTitle.textContent && dtTitle.textContent.trim() && !isGenericTitle(dtTitle.textContent)) {
+                                var dtFundo = document.getElementById('detalhe-fundo');
+                                var dtMeta = document.getElementById('detalhe-meta');
+                                var dtSin = document.getElementById('detalhe-sinopse');
+                                var dtEp = document.getElementById('detalhe-episodio');
+                                var rel = document.getElementById('relacionados');
+                                window.__savedMovieDetail = {
+                                    titulo: dtTitle.textContent.trim(),
+                                    meta: dtMeta ? dtMeta.textContent.trim() : '',
+                                    sinopse: dtSin ? dtSin.textContent.trim() : '',
+                                    fundo: dtFundo ? dtFundo.style.backgroundImage : '',
+                                    episodioHtml: dtEp ? dtEp.innerHTML : '',
+                                    episodioHidden: dtEp ? dtEp.classList.contains('hidden') : true,
+                                    relacionadosHtml: rel ? rel.innerHTML : ''
+                                };
+                            }
                         }
                     } catch(e) {}
                 }
@@ -479,6 +496,18 @@ object InjectedJs {
                         var inMovie = frameVisible || npVisible || detalheVisible;
                         var inCatalog = catalogVisible && !frameVisible && !npVisible && !detalheVisible;
 
+                        // Safety check: if neither catalog nor movie is marked visible but user was in a movie,
+                        // prevent black screen void by restoring detalhe!
+                        if (!inCatalog && !inMovie && window.__isUserInMovie && window.__savedMovieDetail) {
+                            var dtSafe = document.getElementById('detalhe');
+                            if (dtSafe) {
+                                dtSafe.classList.remove('hidden');
+                                document.documentElement.classList.add('no-titulo');
+                                detalheVisible = true;
+                                inMovie = true;
+                            }
+                        }
+
                         if (inCatalog) {
                             if (window.__isUserInMovie || !window.__isUserInCatalog) {
                                 window.__isUserInMovie = false;
@@ -505,40 +534,92 @@ object InjectedJs {
 
                 window.__returnToMovieAudioSelection = function() {
                     try {
-                        var np = document.getElementById('nosso-player');
-                        if (np) {
-                            np.classList.add('hidden');
-                            var v = np.querySelector('video');
-                            if (v) { v.pause(); v.src = ''; }
-                        }
                         var sf = document.getElementById('site-frame');
-                        if (sf) {
-                            sf.classList.add('hidden');
-                            var ifr = sf.querySelector('iframe');
-                            if (ifr) ifr.src = 'about:blank';
-                        }
-                        var dt = document.getElementById('detalhe');
-                        if (dt) {
-                            dt.classList.remove('hidden');
-                        }
-                        var tr = document.getElementById('detalhe-trailer');
-                        if (tr) tr.textContent = '';
-                        var ach = document.getElementById('achamos');
-                        if (ach) ach.classList.add('hidden');
-                        var cat = document.getElementById('catalog');
-                        if (cat) {
-                            cat.classList.add('hidden');
-                        }
-                        document.documentElement.classList.add('no-titulo');
+                        var np = document.getElementById('nosso-player');
+                        var hadPlayerOpen = (sf && !sf.classList.contains('hidden')) || (np && !np.classList.contains('hidden'));
 
-                        window.__isUserInMovie = true;
-                        window.__isUserInCatalog = false;
-
-                        var dtTitle = document.getElementById('detalhe-titulo');
-                        var title = (dtTitle && dtTitle.textContent) ? dtTitle.textContent.trim() : window.__currentMovieTitle;
-                        if (window.AndroidBridge && window.AndroidBridge.onMovieStateChanged) {
-                            window.AndroidBridge.onMovieStateChanged(true, title);
+                        // Let the site's popstate run if player frame was active
+                        if (hadPlayerOpen) {
+                            try {
+                                window.dispatchEvent(new PopStateEvent('popstate'));
+                            } catch(e) {}
                         }
+
+                        function applyDetalheRestore() {
+                            try {
+                                if (np) {
+                                    np.classList.add('hidden');
+                                    var v = np.querySelector('video');
+                                    if (v) { v.pause(); v.src = ''; }
+                                }
+                                if (sf) {
+                                    sf.classList.add('hidden');
+                                    var ifr = sf.querySelector('iframe');
+                                    if (ifr) {
+                                        try { ifr.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*'); } catch(e){}
+                                        ifr.src = 'about:blank';
+                                    }
+                                }
+
+                                var cat = document.getElementById('catalog');
+                                if (cat) cat.classList.add('hidden');
+
+                                var dt = document.getElementById('detalhe');
+                                if (dt) {
+                                    dt.classList.remove('hidden');
+                                }
+                                document.documentElement.classList.add('no-titulo');
+
+                                if (window.__savedMovieDetail) {
+                                    var s = window.__savedMovieDetail;
+                                    var dtTitle = document.getElementById('detalhe-titulo');
+                                    if (dtTitle && (!dtTitle.textContent || !dtTitle.textContent.trim())) {
+                                        dtTitle.textContent = s.titulo || '';
+                                    }
+                                    var dtMeta = document.getElementById('detalhe-meta');
+                                    if (dtMeta && (!dtMeta.textContent || !dtMeta.textContent.trim())) {
+                                        dtMeta.textContent = s.meta || '';
+                                    }
+                                    var dtSin = document.getElementById('detalhe-sinopse');
+                                    if (dtSin && (!dtSin.textContent || !dtSin.textContent.trim())) {
+                                        dtSin.textContent = s.sinopse || '';
+                                    }
+                                    var dtFundo = document.getElementById('detalhe-fundo');
+                                    if (dtFundo && (!dtFundo.style.backgroundImage || dtFundo.style.backgroundImage === 'none')) {
+                                        dtFundo.style.backgroundImage = s.fundo || '';
+                                    }
+                                    var dtEp = document.getElementById('detalhe-episodio');
+                                    if (dtEp && s.episodioHtml && !dtEp.children.length) {
+                                        dtEp.innerHTML = s.episodioHtml;
+                                        if (s.episodioHidden) dtEp.classList.add('hidden'); else dtEp.classList.remove('hidden');
+                                    }
+                                    var rel = document.getElementById('relacionados');
+                                    if (rel && s.relacionadosHtml && !rel.children.length) {
+                                        rel.innerHTML = s.relacionadosHtml;
+                                        rel.classList.remove('hidden');
+                                    }
+                                }
+
+                                var btnAssistir = document.getElementById('detalhe-assistir');
+                                if (btnAssistir) {
+                                    btnAssistir.focus();
+                                }
+
+                                window.__isUserInMovie = true;
+                                window.__isUserInCatalog = false;
+
+                                var title = (document.getElementById('detalhe-titulo') || {}).textContent || window.__currentMovieTitle;
+                                if (window.AndroidBridge && window.AndroidBridge.onMovieStateChanged) {
+                                    window.AndroidBridge.onMovieStateChanged(true, title || '');
+                                }
+                            } catch(err) {}
+                        }
+
+                        applyDetalheRestore();
+                        setTimeout(applyDetalheRestore, 50);
+                        setTimeout(applyDetalheRestore, 150);
+                        setTimeout(applyDetalheRestore, 300);
+                        setTimeout(applyDetalheRestore, 600);
                     } catch(e) {}
                 };
 
@@ -597,6 +678,7 @@ object InjectedJs {
 
                         window.__isUserInMovie = false;
                         window.__isUserInCatalog = true;
+                        window.__isUserInServerFrame = false;
                         window.__currentMovieTitle = null;
 
                         if (window.AndroidBridge && window.AndroidBridge.onNavigatedToCatalog) {
@@ -605,6 +687,37 @@ object InjectedJs {
 
                         window.scrollTo({ top: 0, behavior: 'auto' });
                     } catch(e) {}
+                };
+
+                window.__handleBackNavigation = function() {
+                    try {
+                        var sf = document.getElementById('site-frame');
+                        var np = document.getElementById('nosso-player');
+                        var dt = document.getElementById('detalhe');
+
+                        var isFrameOpen = sf && !sf.classList.contains('hidden');
+                        var isNossoPlayerOpen = np && !np.classList.contains('hidden');
+                        var isDetalheOpen = dt && !dt.classList.contains('hidden');
+
+                        // CASE 1: In server frame, Cloudflare verification, player loading (IMAGE 1)
+                        if (isFrameOpen || isNossoPlayerOpen || window.__isUserInServerFrame) {
+                            window.__isUserInServerFrame = false;
+                            window.__returnToMovieAudioSelection();
+                            return "returned_to_detalhe";
+                        }
+
+                        // CASE 2: On Movie Details / Mais Informações page (IMAGE 2)
+                        if (isDetalheOpen || window.__isUserInMovie) {
+                            window.__isUserInServerFrame = false;
+                            window.__goToCatalog();
+                            return "returned_to_catalog";
+                        }
+
+                        // CASE 3: In the catalog
+                        return "in_catalog";
+                    } catch(e) {
+                        return "error";
+                    }
                 };
 
                 document.addEventListener('click', function(e) {
@@ -646,6 +759,23 @@ object InjectedJs {
 
                         var btnAssistir = e.target.closest('#detalhe-assistir, #destaque-play, .previa-abrir, .detalhe-assistir');
                         if (btnAssistir) {
+                            var dtTitleSnap = document.getElementById('detalhe-titulo');
+                            if (dtTitleSnap && dtTitleSnap.textContent && dtTitleSnap.textContent.trim()) {
+                                var dtFundoSnap = document.getElementById('detalhe-fundo');
+                                var dtMetaSnap = document.getElementById('detalhe-meta');
+                                var dtSinSnap = document.getElementById('detalhe-sinopse');
+                                var dtEpSnap = document.getElementById('detalhe-episodio');
+                                var relSnap = document.getElementById('relacionados');
+                                window.__savedMovieDetail = {
+                                    titulo: dtTitleSnap.textContent.trim(),
+                                    meta: dtMetaSnap ? dtMetaSnap.textContent.trim() : '',
+                                    sinopse: dtSinSnap ? dtSinSnap.textContent.trim() : '',
+                                    fundo: dtFundoSnap ? dtFundoSnap.style.backgroundImage : '',
+                                    episodioHtml: dtEpSnap ? dtEpSnap.innerHTML : '',
+                                    episodioHidden: dtEpSnap ? dtEpSnap.classList.contains('hidden') : true,
+                                    relacionadosHtml: relSnap ? relSnap.innerHTML : ''
+                                };
+                            }
                             var dt = document.getElementById('detalhe-titulo') || document.getElementById('destaque-titulo') || document.getElementById('previa-titulo');
                             var t2 = (dt && dt.textContent ? dt.textContent.trim() : '') || window.__currentMovieTitle;
                             if (t2 && !isGenericTitle(t2)) {

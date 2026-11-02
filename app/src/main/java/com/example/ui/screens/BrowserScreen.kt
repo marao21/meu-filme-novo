@@ -229,14 +229,68 @@ fun BrowserScreen(
         }
     }
 
+    val performBackNavigation: () -> Unit = {
+        if (customFullscreenView != null) {
+            customViewCallback?.onCustomViewHidden()
+            customFullscreenView = null
+            customViewCallback = null
+        } else {
+            webViewInstance?.evaluateJavascript(
+                "(function() { return (window.__handleBackNavigation ? window.__handleBackNavigation() : 'none'); })();"
+            ) { result ->
+                val cleanResult = result?.replace("\"", "")?.trim() ?: ""
+                when (cleanResult) {
+                    "returned_to_detalhe" -> {
+                        isUserInMovie = true
+                        userRequestedWatch = false
+                        latestBannerStream = null
+                        repository.clearDetected()
+                    }
+                    "returned_to_catalog" -> {
+                        isUserInMovie = false
+                        userRequestedWatch = false
+                        latestBannerStream = null
+                        activeMovieTitle = null
+                        repository.clearDetected()
+                    }
+                    else -> {
+                        if (isUserInMovie) {
+                            returnToCatalogInOneClick()
+                        } else if (canGoBack && webViewInstance?.canGoBack() == true) {
+                            webViewInstance?.goBack()
+                            webViewInstance?.postDelayed({
+                                webViewInstance?.evaluateJavascript(
+                                    "if (window.__checkCatalogState) window.__checkCatalogState();",
+                                    null
+                                )
+                            }, 300)
+                        } else {
+                            val now = System.currentTimeMillis()
+                            if (now - lastBackPressTime < 2000) {
+                                (context as? android.app.Activity)?.finish()
+                            } else {
+                                lastBackPressTime = now
+                                Toast.makeText(context, "Pressione voltar novamente para sair do aplicativo", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Listen to remote control and keyboard actions targeting the web player
     LaunchedEffect(webViewInstance) {
         playerViewModel.webKeyEvents.collectLatest { action ->
             when (action) {
+                PlayerViewModel.WebKeyAction.HANDLE_BACK -> {
+                    performBackNavigation()
+                }
                 PlayerViewModel.WebKeyAction.RETURN_TO_AUDIO_SELECTION -> {
                     userRequestedWatch = false
                     latestBannerStream = null
                     repository.clearDetected()
+                    isUserInMovie = true
                     webViewInstance?.evaluateJavascript(
                         "if(window.__returnToMovieAudioSelection) { window.__returnToMovieAudioSelection(); }",
                         null
@@ -274,31 +328,9 @@ fun BrowserScreen(
     }
 
     // Back handling: only active when native player overlay is NOT active
-    // If inside a movie, 1 single click returns cleanly to catalog without stepping through iframe redirect history!
+    // Follows strict 3-tier hierarchy: Server Frame / Cloudflare -> Movie Details (#detalhe) -> Catalog
     BackHandler(enabled = !isNativePlayerActive) {
-        if (customFullscreenView != null) {
-            customViewCallback?.onCustomViewHidden()
-            customFullscreenView = null
-            customViewCallback = null
-        } else if (isUserInMovie) {
-            returnToCatalogInOneClick()
-        } else if (canGoBack && webViewInstance?.canGoBack() == true) {
-            webViewInstance?.goBack()
-            webViewInstance?.postDelayed({
-                webViewInstance?.evaluateJavascript(
-                    "if (window.__checkCatalogState) window.__checkCatalogState();",
-                    null
-                )
-            }, 300)
-        } else {
-            val now = System.currentTimeMillis()
-            if (now - lastBackPressTime < 2000) {
-                (context as? android.app.Activity)?.finish()
-            } else {
-                lastBackPressTime = now
-                Toast.makeText(context, "Pressione voltar novamente para sair do aplicativo", Toast.LENGTH_SHORT).show()
-            }
-        }
+        performBackNavigation()
     }
 
     Box(modifier = modifier.fillMaxSize().background(CinemaBlack)) {

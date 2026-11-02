@@ -169,6 +169,12 @@ class MainActivity : ComponentActivity() {
                         playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.DPAD_RIGHT)
                         return false
                     }
+                    KeyEvent.KEYCODE_BACK,
+                    KeyEvent.KEYCODE_ESCAPE,
+                    KeyEvent.KEYCODE_BUTTON_B -> {
+                        playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.HANDLE_BACK)
+                        return true
+                    }
                 }
             }
         }
