@@ -1,9 +1,6 @@
 package com.example
 
-import android.app.PictureInPictureParams
-import android.os.Build
 import android.os.Bundle
-import android.util.Rational
 import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -199,20 +196,18 @@ class MainActivity : ComponentActivity() {
         return super.onKeyUp(keyCode, event)
     }
 
-    override fun onUserLeaveHint() {
-        super.onUserLeaveHint()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val isPlaying = playerViewModel.playerState.value.isPlaying
-            if (isPlaying) {
-                try {
-                    val params = PictureInPictureParams.Builder()
-                        .setAspectRatio(Rational(16, 9))
-                        .build()
-                    enterPictureInPictureMode(params)
-                } catch (e: Exception) {
-                    // Ignore if PiP fails
-                }
-            }
-        }
+    override fun onPause() {
+        super.onPause()
+        playerViewModel.pause()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        playerViewModel.pause()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        playerViewModel.stopPlayback()
     }
 }

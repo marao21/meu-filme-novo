@@ -134,6 +134,7 @@ fun BrowserScreen(
 
     // Helper for 1-click direct return to catalog
     val returnToCatalogInOneClick: () -> Unit = {
+        playerViewModel.stopPlayback()
         isUserInMovie = false
         userRequestedWatch = false
         activeMovieTitle = null
@@ -185,6 +186,28 @@ fun BrowserScreen(
     }
 
     val isNativePlayerActive = playerViewModel.playerState.collectAsState().value.currentStream != null
+
+    // Silence any playing web video/audio whenever native player becomes active
+    LaunchedEffect(isNativePlayerActive) {
+        if (isNativePlayerActive) {
+            webViewInstance?.evaluateJavascript(
+                """
+                try {
+                    var videos = document.querySelectorAll('video');
+                    for (var i = 0; i < videos.length; i++) {
+                        videos[i].pause();
+                    }
+                    var np = document.getElementById('nosso-player');
+                    if (np) {
+                        var v = np.querySelector('video');
+                        if (v) v.pause();
+                    }
+                } catch(e) {}
+                """.trimIndent(),
+                null
+            )
+        }
+    }
 
     // Keep banner clean - only populated when user explicitly requested watch
     LaunchedEffect(isUserInMovie, userRequestedWatch, detectedList) {
@@ -558,6 +581,7 @@ fun BrowserScreen(
 
                                 @JavascriptInterface
                                 fun onMovieSelected(title: String?) {
+                                    playerViewModel.stopPlayback()
                                     val clean = title?.trim()
                                     if (!clean.isNullOrEmpty() && !repository.isGenericTitle(clean)) {
                                         activeMovieTitle = clean
@@ -582,6 +606,7 @@ fun BrowserScreen(
 
                                 @JavascriptInterface
                                 fun onAssistirClicked(title: String?) {
+                                    playerViewModel.stopPlayback()
                                     val clean = title?.trim()
                                     if (!clean.isNullOrEmpty() && !repository.isGenericTitle(clean)) {
                                         activeMovieTitle = clean
@@ -602,6 +627,7 @@ fun BrowserScreen(
 
                                 @JavascriptInterface
                                 fun onNavigatedToCatalog() {
+                                    playerViewModel.stopPlayback()
                                     isUserInMovie = false
                                     userRequestedWatch = false
                                     activeMovieTitle = null

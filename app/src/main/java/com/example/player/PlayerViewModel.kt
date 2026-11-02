@@ -2,9 +2,12 @@ package com.example.player
 
 import android.app.Application
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import androidx.annotation.OptIn
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -81,8 +84,14 @@ class PlayerViewModel(
         val mediaSourceFactory = DefaultMediaSourceFactory(application)
             .setDataSourceFactory(httpDataSourceFactory)
 
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+            .build()
+
         exoPlayer = ExoPlayer.Builder(application)
             .setMediaSourceFactory(mediaSourceFactory)
+            .setAudioAttributes(audioAttributes, true)
             .setSeekBackIncrementMs(10000)
             .setSeekForwardIncrementMs(10000)
             .setWakeMode(C.WAKE_MODE_NETWORK)
@@ -147,7 +156,17 @@ class PlayerViewModel(
         })
     }
 
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     fun playStream(stream: StreamMedia, startPositionMs: Long = 0L) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            executePlayStream(stream, startPositionMs)
+        } else {
+            mainHandler.post { executePlayStream(stream, startPositionMs) }
+        }
+    }
+
+    private fun executePlayStream(stream: StreamMedia, startPositionMs: Long) {
         val uri = Uri.parse(stream.url)
         val mediaItem = MediaItem.Builder()
             .setUri(uri)
@@ -175,19 +194,29 @@ class PlayerViewModel(
     }
 
     fun togglePlayPause() {
-        if (exoPlayer.isPlaying) {
-            exoPlayer.pause()
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
         } else {
-            exoPlayer.play()
+            mainHandler.post {
+                if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+            }
         }
     }
 
     fun play() {
-        exoPlayer.play()
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            exoPlayer.play()
+        } else {
+            mainHandler.post { exoPlayer.play() }
+        }
     }
 
     fun pause() {
-        exoPlayer.pause()
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            exoPlayer.pause()
+        } else {
+            mainHandler.post { exoPlayer.pause() }
+        }
     }
 
     fun seekTo(positionMs: Long) {
@@ -228,11 +257,20 @@ class PlayerViewModel(
     }
 
     fun stopPlayback() {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            executeStopPlayback()
+        } else {
+            mainHandler.post { executeStopPlayback() }
+        }
+    }
+
+    private fun executeStopPlayback() {
         val current = _playerState.value.currentStream
         if (current != null) {
             repository.notifyPlayerClosed(current.url)
         }
         exoPlayer.stop()
+        exoPlayer.clearMediaItems()
         _playerState.update {
             it.copy(
                 currentStream = null,
