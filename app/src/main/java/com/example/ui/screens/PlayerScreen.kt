@@ -64,6 +64,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -115,6 +116,21 @@ fun TVPlayerFocusButton(
             .testTag(testTag)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { isFocused = it.isFocused }
+            .onKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown) {
+                    when (keyEvent.nativeKeyEvent.keyCode) {
+                        KeyEvent.KEYCODE_DPAD_CENTER,
+                        KeyEvent.KEYCODE_ENTER,
+                        KeyEvent.KEYCODE_NUMPAD_ENTER,
+                        KeyEvent.KEYCODE_SPACE,
+                        KeyEvent.KEYCODE_BUTTON_A -> {
+                            onClick()
+                            true
+                        }
+                        else -> false
+                    }
+                } else false
+            }
             .focusable()
     ) {
         Box(
@@ -138,13 +154,19 @@ fun PlayerScreen(
     val state by viewModel.playerState.collectAsState()
 
     var showControls by remember { mutableStateOf(true) }
+    var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var isSeeking by remember { mutableStateOf(false) }
     var seekProgress by remember { mutableFloatStateOf(0f) }
 
-    // Auto-hide controls after 4.5 seconds of inactivity when playing
-    LaunchedEffect(showControls, state.isPlaying) {
+    val resetControlsTimer: () -> Unit = {
+        showControls = true
+        lastInteractionTime = System.currentTimeMillis()
+    }
+
+    // Auto-hide controls after 8 seconds of inactivity when playing (kept longer per user request)
+    LaunchedEffect(showControls, state.isPlaying, lastInteractionTime) {
         if (showControls && state.isPlaying && !state.isLocked) {
-            delay(4500)
+            delay(8000)
             showControls = false
         }
     }
@@ -159,7 +181,14 @@ fun PlayerScreen(
 
     val stream = state.currentStream!!
 
+    val rootFocusRequester = remember { FocusRequester() }
     val playPauseFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        try {
+            rootFocusRequester.requestFocus()
+        } catch (e: Exception) {}
+    }
 
     LaunchedEffect(showControls) {
         if (showControls) {
@@ -173,71 +202,57 @@ fun PlayerScreen(
         modifier = modifier
             .fillMaxSize()
             .background(CinemaBlack)
+            .focusRequester(rootFocusRequester)
+            .focusable()
             .onKeyEvent { keyEvent ->
                 if (keyEvent.type == KeyEventType.KeyDown) {
                     val code = keyEvent.nativeKeyEvent.keyCode
-                    if (!showControls) {
-                        when (code) {
-                            KeyEvent.KEYCODE_DPAD_CENTER,
-                            KeyEvent.KEYCODE_ENTER,
-                            KeyEvent.KEYCODE_NUMPAD_ENTER,
-                            KeyEvent.KEYCODE_SPACE,
-                            KeyEvent.KEYCODE_BUTTON_A,
-                            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
-                            KeyEvent.KEYCODE_MEDIA_PLAY,
-                            KeyEvent.KEYCODE_MEDIA_PAUSE -> {
-                                viewModel.togglePlayPause()
-                                showControls = true
-                                true
-                            }
-                            KeyEvent.KEYCODE_DPAD_LEFT,
-                            KeyEvent.KEYCODE_MEDIA_REWIND,
-                            KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD -> {
-                                viewModel.seekBackward10s()
-                                showControls = true
-                                true
-                            }
-                            KeyEvent.KEYCODE_DPAD_RIGHT,
-                            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
-                            KeyEvent.KEYCODE_MEDIA_STEP_FORWARD -> {
-                                viewModel.seekForward10s()
-                                showControls = true
-                                true
-                            }
-                            KeyEvent.KEYCODE_DPAD_UP,
-                            KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                showControls = true
-                                true
-                            }
-                            KeyEvent.KEYCODE_BACK,
-                            KeyEvent.KEYCODE_ESCAPE -> {
-                                onNavigateBack()
-                                true
-                            }
-                            else -> false
+
+                    // ANY key press on keyboard or remote shows controls and keeps them visible longer
+                    resetControlsTimer()
+
+                    when (code) {
+                        KeyEvent.KEYCODE_DPAD_CENTER,
+                        KeyEvent.KEYCODE_ENTER,
+                        KeyEvent.KEYCODE_NUMPAD_ENTER,
+                        KeyEvent.KEYCODE_SPACE,
+                        KeyEvent.KEYCODE_BUTTON_A,
+                        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                            viewModel.togglePlayPause()
+                            true
                         }
-                    } else {
-                        when (code) {
-                            KeyEvent.KEYCODE_BACK,
-                            KeyEvent.KEYCODE_ESCAPE -> {
-                                onNavigateBack()
-                                true
-                            }
-                            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
-                            KeyEvent.KEYCODE_MEDIA_PLAY,
-                            KeyEvent.KEYCODE_MEDIA_PAUSE -> {
-                                viewModel.togglePlayPause()
-                                true
-                            }
-                            KeyEvent.KEYCODE_MEDIA_REWIND -> {
-                                viewModel.seekBackward10s()
-                                true
-                            }
-                            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
-                                viewModel.seekForward10s()
-                                true
-                            }
-                            else -> false
+                        KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                            viewModel.play()
+                            true
+                        }
+                        KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                            viewModel.pause()
+                            true
+                        }
+                        KeyEvent.KEYCODE_DPAD_LEFT,
+                        KeyEvent.KEYCODE_MEDIA_REWIND,
+                        KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD -> {
+                            viewModel.seekBackward10s()
+                            true
+                        }
+                        KeyEvent.KEYCODE_DPAD_RIGHT,
+                        KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
+                        KeyEvent.KEYCODE_MEDIA_STEP_FORWARD -> {
+                            viewModel.seekForward10s()
+                            true
+                        }
+                        KeyEvent.KEYCODE_DPAD_UP,
+                        KeyEvent.KEYCODE_DPAD_DOWN -> {
+                            true
+                        }
+                        KeyEvent.KEYCODE_BACK,
+                        KeyEvent.KEYCODE_ESCAPE -> {
+                            onNavigateBack()
+                            true
+                        }
+                        else -> {
+                            // Any other key simply shows controls and keeps them visible
+                            false
                         }
                     }
                 } else {
@@ -248,7 +263,11 @@ fun PlayerScreen(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
             ) {
-                showControls = !showControls
+                if (showControls) {
+                    showControls = false
+                } else {
+                    resetControlsTimer()
+                }
             }
             .testTag("player_screen_root")
     ) {
@@ -488,7 +507,10 @@ fun PlayerScreen(
                     horizontalArrangement = Arrangement.spacedBy(28.dp)
                 ) {
                     TVPlayerFocusButton(
-                        onClick = { viewModel.seekBackward10s() },
+                        onClick = {
+                            viewModel.seekBackward10s()
+                            resetControlsTimer()
+                        },
                         shape = CircleShape,
                         containerColor = CinemaDark.copy(alpha = 0.6f),
                         modifier = Modifier.size(56.dp),
@@ -503,7 +525,10 @@ fun PlayerScreen(
                     }
 
                     TVPlayerFocusButton(
-                        onClick = { viewModel.togglePlayPause() },
+                        onClick = {
+                            viewModel.togglePlayPause()
+                            resetControlsTimer()
+                        },
                         shape = CircleShape,
                         containerColor = if (stream.isAbove15Min) NeonAmber else NeonCyan,
                         focusRequester = playPauseFocusRequester,
@@ -519,7 +544,10 @@ fun PlayerScreen(
                     }
 
                     TVPlayerFocusButton(
-                        onClick = { viewModel.seekForward10s() },
+                        onClick = {
+                            viewModel.seekForward10s()
+                            resetControlsTimer()
+                        },
                         shape = CircleShape,
                         containerColor = CinemaDark.copy(alpha = 0.6f),
                         modifier = Modifier.size(56.dp),

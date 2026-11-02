@@ -173,6 +173,14 @@ class PlayerViewModel(
         }
     }
 
+    fun play() {
+        exoPlayer.play()
+    }
+
+    fun pause() {
+        exoPlayer.pause()
+    }
+
     fun seekTo(positionMs: Long) {
         exoPlayer.seekTo(positionMs)
         _playerState.update { it.copy(currentPositionMs = positionMs) }

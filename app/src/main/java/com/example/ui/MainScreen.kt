@@ -33,6 +33,7 @@ fun MainScreen(
 
     val exitPlayerToMovieSelection: () -> Unit = {
         playerViewModel.stopPlayback()
+        repository.clearDetected()
         playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.RETURN_TO_AUDIO_SELECTION)
     }
 

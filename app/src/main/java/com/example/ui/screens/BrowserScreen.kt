@@ -17,12 +17,17 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.Toast
+import java.io.ByteArrayInputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.nio.charset.Charset
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -124,35 +129,78 @@ fun BrowserScreen(
     var isUserInMovie by remember { mutableStateOf(false) }
     var activeMovieTitle by remember { mutableStateOf<String?>(null) }
     var latestBannerStream by remember { mutableStateOf<StreamMedia?>(null) }
+    var userRequestedWatch by remember { mutableStateOf(false) }
 
     // Helper for 1-click direct return to catalog
     val returnToCatalogInOneClick: () -> Unit = {
         isUserInMovie = false
+        userRequestedWatch = false
         activeMovieTitle = null
         latestBannerStream = null
         repository.clearDetected()
         webViewInstance?.evaluateJavascript(
-            "if (window.__goToCatalog) { window.__goToCatalog(); } else if (typeof voltarParaCatalogo === 'function') { voltarParaCatalogo(false); }",
+            """
+            (function() {
+                try {
+                    if (window.__goToCatalog) {
+                        window.__goToCatalog();
+                    } else {
+                        localStorage.removeItem('bvd:place');
+                        localStorage.setItem('bvd:visitante', '1');
+                        var btnVis = document.getElementById('btn-visitante');
+                        if (btnVis) btnVis.click();
+                        var lp = document.getElementById('login-page');
+                        if (lp) lp.classList.add('hidden');
+                        var dt = document.getElementById('detalhe');
+                        if (dt) dt.classList.add('hidden');
+                        var sf = document.getElementById('site-frame');
+                        if (sf) {
+                            sf.classList.add('hidden');
+                            var ifr = sf.querySelector('iframe');
+                            if (ifr) ifr.src = 'about:blank';
+                        }
+                        var np = document.getElementById('nosso-player');
+                        if (np) {
+                            np.classList.add('hidden');
+                            var v = np.querySelector('video');
+                            if (v) { v.pause(); v.src = ''; }
+                        }
+                        var cat = document.getElementById('catalog');
+                        if (cat) cat.classList.remove('hidden');
+                        var fil = document.getElementById('fileiras');
+                        if (fil) fil.classList.remove('hidden');
+                        var cg = document.getElementById('catalog-grid');
+                        if (cg) cg.classList.remove('hidden');
+                        document.documentElement.classList.remove('no-titulo', 'sem-conta', 'conferindo-conta');
+                        document.documentElement.classList.add('pagina-livre');
+                        var catKind = document.querySelector('input[name="cat-kind"]:checked') || document.querySelector('input[name="cat-kind"]');
+                        if (catKind) { catKind.dispatchEvent(new Event('change', { bubbles: true })); }
+                    }
+                } catch(e) {}
+            })();
+            """.trimIndent(),
             null
         )
     }
 
     val isNativePlayerActive = playerViewModel.playerState.collectAsState().value.currentStream != null
 
-    // Keep latest banner stream active - strictly for genuine movies (> 15m). Never commercials with unknown duration!
-    LaunchedEffect(isUserInMovie, detectedList) {
-        if (!isUserInMovie) {
+    // Keep banner clean - only populated when user explicitly requested watch
+    LaunchedEffect(isUserInMovie, userRequestedWatch, detectedList) {
+        if (!isUserInMovie || !userRequestedWatch) {
             latestBannerStream = null
-        } else {
-            val valid = detectedList.firstOrNull { it.isAbove15Min && it.durationSeconds >= 900L }
-            latestBannerStream = valid
         }
     }
 
+    // When genuine stream (>15m) arrives after user requested watch, auto-open immediately
     LaunchedEffect(Unit) {
         repository.newMovieAlert.collectLatest { stream ->
             if (isUserInMovie && stream.isAbove15Min && stream.durationSeconds >= 900L) {
-                latestBannerStream = stream
+                if (userRequestedWatch) {
+                    userRequestedWatch = false
+                    latestBannerStream = null
+                    onPlayStream(stream)
+                }
             }
         }
     }
@@ -162,6 +210,9 @@ fun BrowserScreen(
         playerViewModel.webKeyEvents.collectLatest { action ->
             when (action) {
                 PlayerViewModel.WebKeyAction.RETURN_TO_AUDIO_SELECTION -> {
+                    userRequestedWatch = false
+                    latestBannerStream = null
+                    repository.clearDetected()
                     webViewInstance?.evaluateJavascript(
                         "if(window.__returnToMovieAudioSelection) { window.__returnToMovieAudioSelection(); }",
                         null
@@ -222,12 +273,14 @@ fun BrowserScreen(
 
     Box(modifier = modifier.fillMaxSize().background(CinemaBlack)) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Top Toolbar
-            Surface(
-                color = CinemaDark,
-                border = BorderStroke(1.dp, CinemaCardBorder),
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            // Top Toolbar - exists in codebase, but hidden per user request: "isso aqui pode ter mas nao pode ficar visivel imagem 1"
+            var showTopToolbar by remember { mutableStateOf(false) }
+            if (showTopToolbar) {
+                Surface(
+                    color = CinemaDark,
+                    border = BorderStroke(1.dp, CinemaCardBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                 Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -277,12 +330,7 @@ fun BrowserScreen(
 
                         IconButton(
                             onClick = {
-                                isUserInMovie = false
-                                activeMovieTitle = null
-                                latestBannerStream = null
-                                repository.clearDetected()
-                                webViewInstance?.loadUrl(DEFAULT_URL)
-                                inputUrl = DEFAULT_URL
+                                returnToCatalogInOneClick()
                             },
                             modifier = Modifier.size(36.dp).testTag("web_btn_home")
                         ) {
@@ -291,6 +339,34 @@ fun BrowserScreen(
                                 contentDescription = "Início",
                                 tint = NeonCyan,
                                 modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                returnToCatalogInOneClick()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (!isUserInMovie) NeonAmber else CinemaSurface,
+                                contentColor = if (!isUserInMovie) Color.Black else TextPrimary
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            modifier = Modifier
+                                .height(34.dp)
+                                .padding(horizontal = 2.dp)
+                                .testTag("web_btn_catalog")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Movie,
+                                contentDescription = "Catálogo",
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "Catálogo",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
                             )
                         }
 
@@ -403,6 +479,7 @@ fun BrowserScreen(
                     }
                 }
             }
+        }
 
             // Webview Content Area + Floating Detected Banner
             Box(
@@ -486,8 +563,29 @@ fun BrowserScreen(
                                 }
 
                                 @JavascriptInterface
+                                fun onAssistirClicked(title: String?) {
+                                    val clean = title?.trim()
+                                    if (!clean.isNullOrEmpty() && !repository.isGenericTitle(clean)) {
+                                        activeMovieTitle = clean
+                                        repository.setCurrentMovieTitle(clean)
+                                    }
+                                    isUserInMovie = true
+                                    userRequestedWatch = true
+
+                                    val valid = repository.detectedStreams.value.firstOrNull { it.isAbove15Min && it.durationSeconds >= 900L }
+                                    if (valid != null) {
+                                        currentWebView.post {
+                                            userRequestedWatch = false
+                                            latestBannerStream = null
+                                            onPlayStream(valid)
+                                        }
+                                    }
+                                }
+
+                                @JavascriptInterface
                                 fun onNavigatedToCatalog() {
                                     isUserInMovie = false
+                                    userRequestedWatch = false
                                     activeMovieTitle = null
                                     latestBannerStream = null
                                     repository.clearDetected()
@@ -545,8 +643,11 @@ fun BrowserScreen(
 
                                         // 4. Strict whitelist: only stay in our app system and authorized embeds (e.g. YouTube trailers)
                                         val isAllowedSystem = host.isEmpty() ||
+                                            host.contains("meufilme") ||
                                             host.contains("filmemeu") ||
                                             host.contains("myembed") ||
+                                            host.contains("playerflix") ||
+                                            host.contains("embedmovies") ||
                                             host.contains("vercel.app") ||
                                             host.contains("supabase") ||
                                             host.contains("themoviedb") ||
@@ -578,7 +679,8 @@ fun BrowserScreen(
                                         val reqUrl = request?.url?.toString()
                                         if (reqUrl != null && isUserInMovie) {
                                             val lower = reqUrl.lowercase()
-                                            if (!lower.contains("youtube.com") && !lower.contains("googlevideo.com") && !lower.contains("ytimg.com")) {
+                                            val isYouTube = lower.contains("youtube.com") || lower.contains("googlevideo.com") || lower.contains("ytimg.com")
+                                            if (!isYouTube && (lower.contains(".m3u8") || lower.contains(".mp4"))) {
                                                 repository.onStreamCandidate(
                                                     url = reqUrl,
                                                     pageTitle = activeMovieTitle ?: "",
@@ -586,6 +688,17 @@ fun BrowserScreen(
                                                     initialDurationSec = 0L,
                                                     userAgent = APP_USER_AGENT
                                                 )
+                                            }
+
+                                            // Subframe script injection for playerflix / myembed to auto-click first server and auto-play
+                                            val isEmbedServer = (lower.contains("playerflix.ink/filme/") ||
+                                                                 lower.contains("playerflix.ink/serie/") ||
+                                                                 lower.contains("myembed.biz/filme/") ||
+                                                                 lower.contains("myembed.biz/serie/")) &&
+                                                                request.method.equals("GET", ignoreCase = true)
+                                            if (isEmbedServer) {
+                                                val injected = injectAutomationIntoEmbed(reqUrl, request)
+                                                if (injected != null) return injected
                                             }
                                         }
                                     } catch (e: Throwable) {
@@ -600,7 +713,7 @@ fun BrowserScreen(
                                     if (url != null) {
                                         currentUrl = url
                                         inputUrl = url
-                                        if (url == DEFAULT_URL || url == "https://filmemeu.vercel.app" || url == "https://filmemeu.vercel.app/") {
+                                        if (url == DEFAULT_URL || url.contains("meufilme.vercel.app") || url.contains("filmemeu.vercel.app")) {
                                             isUserInMovie = false
                                             activeMovieTitle = null
                                             latestBannerStream = null
@@ -776,3 +889,95 @@ fun BrowserScreen(
         )
     }
 }
+
+private fun injectAutomationIntoEmbed(urlStr: String, request: WebResourceRequest): WebResourceResponse? {
+    return try {
+        val url = URL(urlStr)
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 6000
+            readTimeout = 6000
+            instanceFollowRedirects = true
+            setRequestProperty("User-Agent", APP_USER_AGENT)
+            request.requestHeaders.forEach { (k, v) ->
+                if (!k.equals("Host", ignoreCase = true)) {
+                    setRequestProperty(k, v)
+                }
+            }
+            if (urlStr.contains("playerflix.ink")) {
+                setRequestProperty("Referer", "https://myembed.biz/")
+            } else if (urlStr.contains("myembed.biz")) {
+                setRequestProperty("Referer", "https://filmemeu.vercel.app/")
+            }
+        }
+
+        val code = conn.responseCode
+        if (code !in 200..299) {
+            conn.disconnect()
+            return null
+        }
+
+        val rawContentType = conn.contentType ?: "text/html; charset=UTF-8"
+        val mimeType = rawContentType.split(";").firstOrNull()?.trim() ?: "text/html"
+        val charsetName = if (rawContentType.contains("charset=", ignoreCase = true)) {
+            rawContentType.substringAfter("charset=").substringBefore(";").trim()
+        } else {
+            "UTF-8"
+        }
+        val charset = try { Charset.forName(charsetName) } catch (e: Exception) { Charsets.UTF_8 }
+
+        val originalHtml = conn.inputStream.bufferedReader(charset).use { it.readText() }
+
+        val scriptToInject = """
+        <script>
+        (function() {
+            var clickedServer = false;
+            function autoClickFirstServer() {
+                if (clickedServer) return;
+                var opts = document.querySelectorAll('#optionList .option, #optionList > div, .option, [onclick*="player"]');
+                for (var i = 0; i < opts.length; i++) {
+                    var o = opts[i];
+                    if (o && o.offsetParent !== null) {
+                        clickedServer = true;
+                        o.click();
+                        break;
+                    }
+                }
+            }
+            setInterval(autoClickFirstServer, 100);
+
+            function autoPlayEmbed() {
+                try {
+                    var playBtns = document.querySelectorAll('.play-btn, .vjs-big-play-button, .jw-display-icon-container, [aria-label*="Play" i], button.play, .play');
+                    playBtns.forEach(function(b) {
+                        if (b && b.offsetParent !== null) b.click();
+                    });
+                    var vids = document.querySelectorAll('video');
+                    vids.forEach(function(v) {
+                        if (v.paused) {
+                            v.muted = false;
+                            v.play().catch(function(){});
+                        }
+                    });
+                } catch(e) {}
+            }
+            setInterval(autoPlayEmbed, 350);
+        })();
+        </script>
+        """.trimIndent()
+
+        val modifiedHtml = if (originalHtml.contains("</body>", ignoreCase = true)) {
+            originalHtml.replace("</body>", "$scriptToInject\n</body>", ignoreCase = true)
+        } else {
+            "$originalHtml\n$scriptToInject"
+        }
+
+        val bytes = modifiedHtml.toByteArray(Charsets.UTF_8)
+        val headers = mutableMapOf<String, String>()
+        headers["Access-Control-Allow-Origin"] = "*"
+        WebResourceResponse(mimeType, "UTF-8", 200, "OK", headers, ByteArrayInputStream(bytes))
+    } catch (e: Exception) {
+        null
+    }
+}
+
