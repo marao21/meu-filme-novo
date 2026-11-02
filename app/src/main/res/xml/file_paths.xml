@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  De onde o FileProvider pode entregar arquivos a outros aplicativos.
+
+  Só a pasta de downloads do próprio app: é lá que o APK da atualização cai, e
+  é o único arquivo que precisamos passar adiante — para o instalador do
+  Android. Nada mais do app fica ao alcance.
+-->
+<paths>
+    <external-files-path name="downloads" path="Download/" />
+    <files-path name="arquivos" path="." />
+    <cache-path name="cache" path="." />
+</paths>

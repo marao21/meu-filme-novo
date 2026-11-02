@@ -9,6 +9,7 @@ import android.os.Message
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
+import com.example.update.BaixarAtualizacao
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -522,6 +523,14 @@ fun BrowserScreen(
                             isFocusable = true
                             isFocusableInTouchMode = true
                             keepScreenOn = true
+
+                            // Um WebView ignora downloads: sem isto, o link do
+                            // APK no site nao faz nada, nem erro aparece.
+                            setDownloadListener { url, agente, _, tipo, _ ->
+                                if (BaixarAtualizacao.ehApk(url, tipo)) {
+                                    BaixarAtualizacao.baixar(ctx, url, agente ?: APP_USER_AGENT)
+                                }
+                            }
 
                             // JavaScript Native Bridge - Thread-safe
                             addJavascriptInterface(object {
