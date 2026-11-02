@@ -60,6 +60,13 @@ class PlayerViewModel(
         _webKeyEvents.tryEmit(action)
     }
 
+    private val _playerControlsTrigger = MutableStateFlow(0L)
+    val playerControlsTrigger: StateFlow<Long> = _playerControlsTrigger.asStateFlow()
+
+    fun triggerShowControls() {
+        _playerControlsTrigger.value = System.currentTimeMillis()
+    }
+
     private var positionTrackerJob: Job? = null
 
     init {

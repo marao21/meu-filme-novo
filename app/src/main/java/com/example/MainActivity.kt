@@ -27,52 +27,98 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val playerState = playerViewModel.playerState.value
-        // When player is active, route TV Box / Chromecast remote controls directly
-        if (playerState.currentStream != null) {
-            when (keyCode) {
-                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
-                KeyEvent.KEYCODE_MEDIA_PLAY,
-                KeyEvent.KEYCODE_MEDIA_PAUSE -> {
-                    playerViewModel.togglePlayPause()
-                    return true
+        val isPlayerActive = playerState.currentStream != null
+
+        if (isPlayerActive) {
+            val keyCode = event.keyCode
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                // ANY key on the physical keyboard, TV remote, or gamepad wakes up controls for 8 seconds
+                playerViewModel.triggerShowControls()
+
+                when (keyCode) {
+                    KeyEvent.KEYCODE_DPAD_CENTER,
+                    KeyEvent.KEYCODE_ENTER,
+                    KeyEvent.KEYCODE_NUMPAD_ENTER,
+                    KeyEvent.KEYCODE_SPACE,
+                    KeyEvent.KEYCODE_BUTTON_A,
+                    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                        playerViewModel.togglePlayPause()
+                        return true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                        playerViewModel.play()
+                        return true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                        playerViewModel.pause()
+                        return true
+                    }
+                    KeyEvent.KEYCODE_DPAD_LEFT,
+                    KeyEvent.KEYCODE_MEDIA_REWIND,
+                    KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD -> {
+                        playerViewModel.seekBackward10s()
+                        return true
+                    }
+                    KeyEvent.KEYCODE_DPAD_RIGHT,
+                    KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
+                    KeyEvent.KEYCODE_MEDIA_STEP_FORWARD -> {
+                        playerViewModel.seekForward10s()
+                        return true
+                    }
+                    KeyEvent.KEYCODE_BACK,
+                    KeyEvent.KEYCODE_ESCAPE -> {
+                        playerViewModel.stopPlayback()
+                        playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.RETURN_TO_AUDIO_SELECTION)
+                        return true
+                    }
+                    KeyEvent.KEYCODE_VOLUME_UP,
+                    KeyEvent.KEYCODE_VOLUME_DOWN,
+                    KeyEvent.KEYCODE_VOLUME_MUTE,
+                    KeyEvent.KEYCODE_DPAD_UP,
+                    KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        return super.dispatchKeyEvent(event)
+                    }
+                    else -> {
+                        // Any keyboard key (letters, numbers, etc.) wakes up the controls
+                        return true
+                    }
                 }
-                KeyEvent.KEYCODE_MEDIA_REWIND -> {
-                    playerViewModel.seekBackward10s()
-                    return true
-                }
-                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
-                    playerViewModel.seekForward10s()
-                    return true
-                }
-                KeyEvent.KEYCODE_BACK,
-                KeyEvent.KEYCODE_ESCAPE -> {
-                    playerViewModel.stopPlayback()
-                    playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.RETURN_TO_AUDIO_SELECTION)
-                    return true
+            } else if (event.action == KeyEvent.ACTION_UP) {
+                when (keyCode) {
+                    KeyEvent.KEYCODE_VOLUME_UP,
+                    KeyEvent.KEYCODE_VOLUME_DOWN,
+                    KeyEvent.KEYCODE_VOLUME_MUTE,
+                    KeyEvent.KEYCODE_DPAD_UP,
+                    KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        return super.dispatchKeyEvent(event)
+                    }
+                    else -> return true
                 }
             }
         } else {
             // When browsing, let D-pad, Enter, and navigation keys pass directly to the WebView
-            when (keyCode) {
-                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
-                KeyEvent.KEYCODE_MEDIA_PLAY,
-                KeyEvent.KEYCODE_MEDIA_PAUSE -> {
-                    playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.PLAY_PAUSE)
-                    return true
-                }
-                KeyEvent.KEYCODE_MEDIA_REWIND -> {
-                    playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.REWIND)
-                    return true
-                }
-                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
-                    playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.FORWARD)
-                    return true
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                when (event.keyCode) {
+                    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                    KeyEvent.KEYCODE_MEDIA_PLAY,
+                    KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                        playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.PLAY_PAUSE)
+                        return true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                        playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.REWIND)
+                        return true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                        playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.FORWARD)
+                        return true
+                    }
                 }
             }
         }
-        return super.onKeyDown(keyCode, event)
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onUserLeaveHint() {

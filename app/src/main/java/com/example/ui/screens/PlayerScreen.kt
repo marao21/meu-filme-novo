@@ -184,6 +184,13 @@ fun PlayerScreen(
     val rootFocusRequester = remember { FocusRequester() }
     val playPauseFocusRequester = remember { FocusRequester() }
 
+    val controlsTrigger by viewModel.playerControlsTrigger.collectAsState()
+    LaunchedEffect(controlsTrigger) {
+        if (controlsTrigger > 0L) {
+            resetControlsTimer()
+        }
+    }
+
     LaunchedEffect(Unit) {
         try {
             rootFocusRequester.requestFocus()
@@ -191,11 +198,13 @@ fun PlayerScreen(
     }
 
     LaunchedEffect(showControls) {
-        if (showControls) {
-            try {
+        try {
+            if (showControls) {
                 playPauseFocusRequester.requestFocus()
-            } catch (e: Exception) {}
-        }
+            } else {
+                rootFocusRequester.requestFocus()
+            }
+        } catch (e: Exception) {}
     }
 
     Box(
@@ -281,6 +290,9 @@ fun PlayerScreen(
                     )
                     player = viewModel.exoPlayer
                     useController = false
+                    isFocusable = false
+                    isFocusableInTouchMode = false
+                    descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
                     resizeMode = when (state.resizeMode) {
                         1 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
                         2 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
@@ -290,6 +302,9 @@ fun PlayerScreen(
             },
             update = { playerView ->
                 playerView.player = viewModel.exoPlayer
+                playerView.isFocusable = false
+                playerView.isFocusableInTouchMode = false
+                playerView.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
                 playerView.resizeMode = when (state.resizeMode) {
                     1 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
                     2 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
