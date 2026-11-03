@@ -77,6 +77,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -90,6 +92,23 @@ import com.example.ui.theme.NeonCyan
 import com.example.ui.theme.NeonRed
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.SystemBg
+import com.example.ui.theme.SystemBgSoft
+import com.example.ui.theme.SystemPanel
+import com.example.ui.theme.SystemLine
+import com.example.ui.theme.SystemLineSoft
+import com.example.ui.theme.SystemText
+import com.example.ui.theme.SystemMuted
+import com.example.ui.theme.SystemHeaderTab
+import com.example.ui.theme.SystemAccent
+import com.example.ui.theme.SystemAccentStrong
+import com.example.ui.theme.SystemHls
+import com.example.ui.theme.SystemMp4
+import com.example.ui.theme.SystemWarn
+import com.example.ui.theme.SystemDanger
+import com.example.ui.theme.SystemShadowHeader
+import com.example.ui.theme.SystemShadowGradient
+import com.example.ui.theme.SystemPillBg
 import kotlinx.coroutines.delay
 import java.util.Locale
 
@@ -99,8 +118,8 @@ fun TVPlayerFocusButton(
     modifier: Modifier = Modifier,
     shape: Shape = CircleShape,
     containerColor: Color = Color.Transparent,
-    contentColor: Color = TextPrimary,
-    focusBorderColor: Color = NeonAmber,
+    contentColor: Color = SystemText,
+    focusBorderColor: Color = SystemAccent,
     focusRequester: FocusRequester? = null,
     testTag: String = "",
     content: @Composable () -> Unit
@@ -138,6 +157,70 @@ fun TVPlayerFocusButton(
             contentAlignment = Alignment.Center
         ) {
             content()
+        }
+    }
+}
+
+@Composable
+fun TVPlayerFocusPill(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    focusRequester: FocusRequester? = null,
+    testTag: String = ""
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(20.dp),
+        color = if (isFocused) SystemBgSoft else SystemPillBg,
+        contentColor = SystemText,
+        border = BorderStroke(
+            if (isFocused) 2.dp else 1.dp,
+            if (isFocused) SystemAccent else SystemLineSoft
+        ),
+        modifier = modifier
+            .testTag(testTag)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .onFocusChanged { isFocused = it.isFocused }
+            .onKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown) {
+                    when (keyEvent.nativeKeyEvent.keyCode) {
+                        KeyEvent.KEYCODE_DPAD_CENTER,
+                        KeyEvent.KEYCODE_ENTER,
+                        KeyEvent.KEYCODE_NUMPAD_ENTER,
+                        KeyEvent.KEYCODE_SPACE,
+                        KeyEvent.KEYCODE_BUTTON_A -> {
+                            onClick()
+                            true
+                        }
+                        else -> false
+                    }
+                } else false
+            }
+            .focusable()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = if (isFocused) SystemAccent else SystemText,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+            }
+            Text(
+                text = text,
+                color = if (isFocused) SystemAccent else SystemText,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }
@@ -446,190 +529,224 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxSize()
         ) {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.5f))
+                modifier = Modifier.fillMaxSize()
             ) {
-                // Top Bar
-                Row(
+                // Top Bar with soft shadow gradient
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.TopCenter)
-                        .background(Color.Black.copy(alpha = 0.4f))
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(SystemShadowHeader, SystemShadowHeader.copy(alpha = 0.5f), Color.Transparent)
+                            )
+                        )
+                        .padding(horizontal = 20.dp, vertical = 12.dp)
                 ) {
-                    TVPlayerFocusButton(
-                        onClick = onNavigateBack,
-                        testTag = "player_btn_back"
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Voltar",
-                            tint = TextPrimary
-                        )
-                    }
+                        TVPlayerFocusButton(
+                            onClick = onNavigateBack,
+                            containerColor = SystemBgSoft.copy(alpha = 0.85f),
+                            focusBorderColor = SystemAccent,
+                            testTag = "player_btn_back"
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Voltar",
+                                tint = SystemText
+                            )
+                        }
 
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 8.dp),
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            text = stream.title,
-                            color = TextPrimary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+                        Spacer(modifier = Modifier.width(12.dp))
 
-                    // Lock button
-                    TVPlayerFocusButton(
-                        onClick = { viewModel.toggleLock() },
-                        testTag = "player_btn_lock"
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.LockOpen,
-                            contentDescription = "Bloquear tela",
-                            tint = TextSecondary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                        // Stream badge (HLS or MP4)
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = SystemPanel.copy(alpha = 0.9f),
+                            border = BorderStroke(1.dp, if (stream.isHls) SystemHls else SystemMp4)
+                        ) {
+                            Text(
+                                text = if (stream.isHls) "HLS" else "MP4",
+                                color = if (stream.isHls) SystemHls else SystemMp4,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
 
-                    // Aspect ratio cycle
-                    TVPlayerFocusButton(
-                        onClick = { viewModel.cycleResizeMode() },
-                        testTag = "player_btn_aspect"
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AspectRatio,
-                            contentDescription = "Ajustar proporção",
-                            tint = TextSecondary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                        Spacer(modifier = Modifier.weight(1f))
 
-                    // Speed selector
-                    TVPlayerFocusButton(
-                        onClick = {
-                            val nextSpeed = when (state.playbackSpeed) {
-                                1.0f -> 1.25f
-                                1.25f -> 1.5f
-                                1.5f -> 2.0f
-                                2.0f -> 0.75f
-                                else -> 1.0f
-                            }
-                            viewModel.setPlaybackSpeed(nextSpeed)
-                        },
-                        shape = RoundedCornerShape(8.dp),
-                        containerColor = CinemaSurface.copy(alpha = 0.8f),
-                        testTag = "player_btn_speed"
-                    ) {
-                        Text(
-                            text = "${state.playbackSpeed}x",
-                            color = NeonCyan,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
+                        // Lock button
+                        TVPlayerFocusButton(
+                            onClick = { viewModel.toggleLock() },
+                            containerColor = SystemBgSoft.copy(alpha = 0.85f),
+                            focusBorderColor = SystemAccent,
+                            testTag = "player_btn_lock"
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.LockOpen,
+                                contentDescription = "Bloquear tela",
+                                tint = SystemMuted,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
 
-                    // External player intent
-                    TVPlayerFocusButton(
-                        onClick = {
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW).apply {
-                                    setDataAndType(Uri.parse(stream.url), if (stream.isHls) "application/x-mpegURL" else "video/*")
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Aspect ratio cycle
+                        TVPlayerFocusButton(
+                            onClick = { viewModel.cycleResizeMode() },
+                            containerColor = SystemBgSoft.copy(alpha = 0.85f),
+                            focusBorderColor = SystemAccent,
+                            testTag = "player_btn_aspect"
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AspectRatio,
+                                contentDescription = "Ajustar proporção",
+                                tint = SystemMuted,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Speed selector
+                        TVPlayerFocusButton(
+                            onClick = {
+                                val nextSpeed = when (state.playbackSpeed) {
+                                    1.0f -> 1.25f
+                                    1.25f -> 1.5f
+                                    1.5f -> 2.0f
+                                    2.0f -> 0.75f
+                                    else -> 1.0f
                                 }
-                                context.startActivity(Intent.createChooser(intent, "Abrir com app externo"))
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Nenhum player externo disponível", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        testTag = "player_btn_external"
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.OpenInNew,
-                            contentDescription = "Player Externo",
-                            tint = TextSecondary,
-                            modifier = Modifier.size(20.dp)
-                        )
+                                viewModel.setPlaybackSpeed(nextSpeed)
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            containerColor = SystemBgSoft.copy(alpha = 0.85f),
+                            focusBorderColor = SystemAccent,
+                            testTag = "player_btn_speed"
+                        ) {
+                            Text(
+                                text = "${state.playbackSpeed}x",
+                                color = SystemAccent,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // External player intent
+                        TVPlayerFocusButton(
+                            onClick = {
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                                        setDataAndType(Uri.parse(stream.url), if (stream.isHls) "application/x-mpegURL" else "video/*")
+                                    }
+                                    context.startActivity(Intent.createChooser(intent, "Abrir com app externo"))
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Nenhum player externo disponível", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            containerColor = SystemBgSoft.copy(alpha = 0.85f),
+                            focusBorderColor = SystemAccent,
+                            testTag = "player_btn_external"
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.OpenInNew,
+                                contentDescription = "Player Externo",
+                                tint = SystemMuted,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
 
-                // Center Play/Pause & Seek Buttons
-                Row(
-                    modifier = Modifier.align(Alignment.Center),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(28.dp)
+                // Center Play/Pause Button
+                Box(
+                    modifier = Modifier.align(Alignment.Center)
                 ) {
-                    TVPlayerFocusButton(
-                        onClick = {
-                            viewModel.seekBackward10s()
-                            resetControlsTimer()
-                        },
-                        shape = CircleShape,
-                        containerColor = CinemaDark.copy(alpha = 0.6f),
-                        modifier = Modifier.size(56.dp),
-                        testTag = "player_btn_rewind"
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Replay10,
-                            contentDescription = "Retroceder 10s",
-                            tint = TextPrimary,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-
                     TVPlayerFocusButton(
                         onClick = {
                             viewModel.togglePlayPause()
                             resetControlsTimer()
                         },
                         shape = CircleShape,
-                        containerColor = if (stream.isAbove15Min) NeonAmber else NeonCyan,
+                        containerColor = SystemAccentStrong,
+                        contentColor = Color.Black,
+                        focusBorderColor = SystemAccent,
                         focusRequester = playPauseFocusRequester,
-                        modifier = Modifier.size(72.dp),
+                        modifier = Modifier.size(76.dp),
                         testTag = "player_btn_play_pause"
                     ) {
                         Icon(
                             imageVector = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                             contentDescription = if (state.isPlaying) "Pausar" else "Reproduzir",
                             tint = Color.Black,
-                            modifier = Modifier.size(40.dp)
-                        )
-                    }
-
-                    TVPlayerFocusButton(
-                        onClick = {
-                            viewModel.seekForward10s()
-                            resetControlsTimer()
-                        },
-                        shape = CircleShape,
-                        containerColor = CinemaDark.copy(alpha = 0.6f),
-                        modifier = Modifier.size(56.dp),
-                        testTag = "player_btn_forward"
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Forward10,
-                            contentDescription = "Avançar 10s",
-                            tint = TextPrimary,
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(42.dp)
                         )
                     }
                 }
 
-                // Bottom Timeline & Duration
+                // Bottom Section: Netflix TV style matching user screenshot
+                // Prominent Movie Title, Quick Action Pills & Sleek Timeline
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
-                        .background(Color.Black.copy(alpha = 0.6f))
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color.Transparent,
+                                    Color(0x99050912),
+                                    Color(0xDD050912),
+                                    SystemShadowGradient
+                                )
+                            )
+                        )
+                        .padding(horizontal = 24.dp, vertical = 20.dp)
                 ) {
+                    // Big Prominent Movie / Series Title
+                    Text(
+                        text = stream.title.ifEmpty { "Filme" },
+                        color = SystemText,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 32.sp,
+                        letterSpacing = (-0.5).sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Action Pills (like [ More Info ] [ Episodes ] in user screenshot)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        TVPlayerFocusPill(
+                            text = "Mais Informações",
+                            icon = Icons.Default.Info,
+                            onClick = onNavigateBack,
+                            testTag = "pill_mais_info"
+                        )
+
+                        TVPlayerFocusPill(
+                            text = "Catálogo",
+                            icon = Icons.Default.Movie,
+                            onClick = onNavigateToBrowse,
+                            testTag = "pill_catalogo"
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Sleek Modern Timeline
                     var isSliderFocused by remember { mutableStateOf(false) }
                     Slider(
                         value = if (isSeeking) seekProgress else state.progressFraction,
@@ -645,18 +762,18 @@ fun PlayerScreen(
                             }
                         },
                         colors = SliderDefaults.colors(
-                            thumbColor = if (isSliderFocused) NeonAmber else if (stream.isAbove15Min) NeonAmber else NeonCyan,
-                            activeTrackColor = if (isSliderFocused) NeonAmber else if (stream.isAbove15Min) NeonAmber else NeonCyan,
-                            inactiveTrackColor = Color.White.copy(alpha = 0.2f)
+                            thumbColor = SystemAccent,
+                            activeTrackColor = SystemAccent,
+                            inactiveTrackColor = SystemLineSoft
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("player_timeline_slider")
                             .border(
-                                border = if (isSliderFocused) BorderStroke(2.5.dp, NeonAmber) else BorderStroke(0.dp, Color.Transparent),
+                                border = if (isSliderFocused) BorderStroke(2.dp, SystemAccent) else BorderStroke(0.dp, Color.Transparent),
                                 shape = RoundedCornerShape(8.dp)
                             )
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                            .padding(horizontal = 2.dp, vertical = 2.dp)
                             .onFocusChanged { isSliderFocused = it.isFocused }
                             .focusable()
                             .onKeyEvent { keyEvent ->
@@ -685,14 +802,15 @@ fun PlayerScreen(
                         val currentMs = if (isSeeking) (seekProgress * state.totalDurationMs).toLong() else state.currentPositionMs
                         Text(
                             text = formatTimeMs(currentMs),
-                            color = TextPrimary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
+                            color = SystemText,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
                         )
                         Text(
                             text = formatTimeMs(state.totalDurationMs),
-                            color = TextSecondary,
-                            fontSize = 12.sp
+                            color = SystemMuted,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
                         )
                     }
                 }
@@ -709,7 +827,7 @@ private fun EmptyPlayerState(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(CinemaBlack)
+            .background(SystemBg)
             .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -718,7 +836,7 @@ private fun EmptyPlayerState(
             verticalArrangement = Arrangement.Center
         ) {
             Surface(
-                color = CinemaSurface,
+                color = SystemPanel,
                 shape = CircleShape,
                 modifier = Modifier.size(80.dp)
             ) {
@@ -726,7 +844,7 @@ private fun EmptyPlayerState(
                     Icon(
                         imageVector = Icons.Default.Movie,
                         contentDescription = null,
-                        tint = NeonCyan,
+                        tint = SystemAccent,
                         modifier = Modifier.size(40.dp)
                     )
                 }
@@ -736,7 +854,7 @@ private fun EmptyPlayerState(
 
             Text(
                 text = "Nenhum vídeo em reprodução",
-                color = TextPrimary,
+                color = SystemText,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -745,7 +863,7 @@ private fun EmptyPlayerState(
 
             Text(
                 text = "Navegue pelo FilmeMeu para encontrar um filme ou selecione um stream detectado.",
-                color = TextSecondary,
+                color = SystemMuted,
                 fontSize = 13.sp,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 24.dp)
@@ -756,7 +874,7 @@ private fun EmptyPlayerState(
             Button(
                 onClick = onNavigateToBrowse,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = NeonCyan,
+                    containerColor = SystemAccentStrong,
                     contentColor = Color.Black
                 ),
                 shape = RoundedCornerShape(10.dp),

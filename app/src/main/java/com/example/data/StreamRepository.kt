@@ -166,15 +166,87 @@ class StreamRepository(
         }
     }
 
+    suspend fun getSavedPositionMs(stream: StreamMedia): Long {
+        return try {
+            var entity = historyDao.findByUrlOrTitle(stream.url, stream.title)
+            if (entity == null) {
+                val currentTitle = _currentMovieTitle.value
+                if (!currentTitle.isNullOrBlank() && !isGenericTitle(currentTitle)) {
+                    entity = historyDao.findByTitle(currentTitle)
+                }
+            }
+            if (entity != null && entity.lastPositionMs > 10_000L) {
+                val durMs = if (entity.durationSeconds > 0) entity.durationSeconds * 1000L else 0L
+                if (durMs > 0 && entity.lastPositionMs >= (durMs * 0.95)) {
+                    0L // Video was already finished (>95%)
+                } else {
+                    entity.lastPositionMs
+                }
+            } else {
+                0L
+            }
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    suspend fun getSavedPositionMsForTitle(title: String): Long {
+        return try {
+            val entity = historyDao.findByTitle(title)
+            if (entity != null && entity.lastPositionMs > 10_000L) {
+                val durMs = if (entity.durationSeconds > 0) entity.durationSeconds * 1000L else 0L
+                if (durMs > 0 && entity.lastPositionMs >= (durMs * 0.95)) {
+                    0L
+                } else {
+                    entity.lastPositionMs
+                }
+            } else {
+                0L
+            }
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    suspend fun saveProgressForTitle(title: String, positionMs: Long, durationSec: Long = 0L) {
+        if (positionMs < 5_000L || isGenericTitle(title)) return
+        try {
+            val existing = historyDao.findByTitle(title)
+            val entity = HistoryEntity(
+                id = existing?.id ?: java.util.UUID.randomUUID().toString(),
+                url = existing?.url ?: "saved://$title",
+                title = title,
+                format = existing?.format ?: "HLS",
+                isHls = existing?.isHls ?: true,
+                durationSeconds = if (durationSec > 0) durationSec else (existing?.durationSeconds ?: 0L),
+                lastPositionMs = positionMs,
+                timestamp = System.currentTimeMillis(),
+                pageUrl = existing?.pageUrl ?: ""
+            )
+            historyDao.insertOrUpdate(entity)
+        } catch (e: Exception) {
+            // Ignore DB error
+        }
+    }
+
     suspend fun saveHistory(stream: StreamMedia, lastPositionMs: Long) {
         try {
+            if (lastPositionMs < 5_000L) return
+            val existing = historyDao.findByUrlOrTitle(stream.url, stream.title)
+            val entityId = existing?.id ?: stream.id
+            val resolvedTitle = if (!isGenericTitle(stream.title)) {
+                stream.title
+            } else {
+                existing?.title ?: _currentMovieTitle.value ?: stream.title
+            }
+            val durSec = if (stream.durationSeconds > 0) stream.durationSeconds else (existing?.durationSeconds ?: 0L)
             val entity = HistoryEntity(
-                id = stream.id,
+                id = entityId,
                 url = stream.url,
-                title = stream.title,
+                title = resolvedTitle,
                 format = stream.format,
                 isHls = stream.isHls,
-                durationSeconds = stream.durationSeconds,
+                durationSeconds = durSec,
                 lastPositionMs = lastPositionMs,
                 timestamp = System.currentTimeMillis(),
                 pageUrl = stream.pageUrl

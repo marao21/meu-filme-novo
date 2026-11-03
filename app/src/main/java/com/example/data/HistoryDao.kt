@@ -23,4 +23,10 @@ interface HistoryDao {
 
     @Query("SELECT * FROM playback_history WHERE url = :url LIMIT 1")
     suspend fun findByUrl(url: String): HistoryEntity?
+
+    @Query("SELECT * FROM playback_history WHERE title = :title ORDER BY timestamp DESC LIMIT 1")
+    suspend fun findByTitle(title: String): HistoryEntity?
+
+    @Query("SELECT * FROM playback_history WHERE url = :url OR (title = :title AND title != 'Filme Selecionado') ORDER BY timestamp DESC LIMIT 1")
+    suspend fun findByUrlOrTitle(url: String, title: String): HistoryEntity?
 }

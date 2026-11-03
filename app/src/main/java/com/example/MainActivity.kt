@@ -175,6 +175,10 @@ class MainActivity : ComponentActivity() {
                         playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.HANDLE_BACK)
                         return true
                     }
+                    KeyEvent.KEYCODE_MENU -> {
+                        playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.TOGGLE_MENU)
+                        return true
+                    }
                 }
             }
         }

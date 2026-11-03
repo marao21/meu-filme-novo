@@ -69,6 +69,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -93,6 +94,7 @@ import com.example.ui.theme.NeonCyan
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 private const val DEFAULT_URL = "https://filmemeu.vercel.app/"
 private const val APP_USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36"
@@ -107,6 +109,7 @@ fun BrowserScreen(
 ) {
     val repository = playerViewModel.repository
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
     var currentUrl by remember { mutableStateOf(DEFAULT_URL) }
@@ -206,6 +209,27 @@ fun BrowserScreen(
                 """.trimIndent(),
                 null
             )
+        }
+    }
+
+    val playerState by playerViewModel.playerState.collectAsState()
+
+    // Sync playback progress back to website's bvd:progresso so "Continuar assistindo" catalog row updates
+    LaunchedEffect(playerState.currentPositionMs) {
+        val stream = playerState.currentStream
+        val posMs = playerState.currentPositionMs
+        val durMs = playerState.totalDurationMs
+        if (stream != null && posMs > 5_000L) {
+            val title = if (!repository.isGenericTitle(stream.title)) stream.title else (activeMovieTitle ?: "")
+            if (title.isNotBlank()) {
+                val sec = posMs / 1000L
+                val durSec = if (durMs > 0) durMs / 1000L else stream.durationSeconds
+                val safeTitle = title.replace("\\", "\\\\").replace("'", "\\'")
+                webViewInstance?.evaluateJavascript(
+                    "if (window.__syncProgressToWeb) { window.__syncProgressToWeb('$safeTitle', $sec, $durSec); }",
+                    null
+                )
+            }
         }
     }
 
@@ -317,6 +341,12 @@ fun BrowserScreen(
                 PlayerViewModel.WebKeyAction.DPAD_CENTER -> {
                     webViewInstance?.evaluateJavascript(
                         "if(window.__handleTvRemoteOk) { window.__handleTvRemoteOk(); }",
+                        null
+                    )
+                }
+                PlayerViewModel.WebKeyAction.TOGGLE_MENU -> {
+                    webViewInstance?.evaluateJavascript(
+                        "if(window.__toggleMenu) { window.__toggleMenu(); }",
                         null
                     )
                 }
@@ -636,13 +666,17 @@ fun BrowserScreen(
                                     }
                                 }
 
-                                @JavascriptInterface
-                                fun onAssistirClicked(title: String?) {
+                                fun handleAssistirClicked(title: String?, savedSec: Long) {
                                     playerViewModel.stopPlayback()
                                     val clean = title?.trim()
                                     if (!clean.isNullOrEmpty() && !repository.isGenericTitle(clean)) {
                                         activeMovieTitle = clean
                                         repository.setCurrentMovieTitle(clean)
+                                        if (savedSec > 10L) {
+                                            coroutineScope.launch {
+                                                repository.saveProgressForTitle(clean, savedSec * 1000L)
+                                            }
+                                        }
                                     }
                                     isUserInMovie = true
                                     userRequestedWatch = true
@@ -655,6 +689,16 @@ fun BrowserScreen(
                                             onPlayStream(valid)
                                         }
                                     }
+                                }
+
+                                @JavascriptInterface
+                                fun onAssistirClicked(title: String?) {
+                                    handleAssistirClicked(title, 0L)
+                                }
+
+                                @JavascriptInterface
+                                fun onAssistirClicked(title: String?, savedSec: Double) {
+                                    handleAssistirClicked(title, savedSec.toLong())
                                 }
 
                                 @JavascriptInterface

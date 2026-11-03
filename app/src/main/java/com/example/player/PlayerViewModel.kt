@@ -55,7 +55,8 @@ class PlayerViewModel(
         DPAD_RIGHT,
         DPAD_CENTER,
         RETURN_TO_AUDIO_SELECTION,
-        HANDLE_BACK
+        HANDLE_BACK,
+        TOGGLE_MENU
     }
 
     private val _webKeyEvents = kotlinx.coroutines.flow.MutableSharedFlow<WebKeyAction>(extraBufferCapacity = 1)
@@ -160,10 +161,29 @@ class PlayerViewModel(
     private val mainHandler = Handler(Looper.getMainLooper())
 
     fun playStream(stream: StreamMedia, startPositionMs: Long = 0L) {
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            executePlayStream(stream, startPositionMs)
-        } else {
-            mainHandler.post { executePlayStream(stream, startPositionMs) }
+        viewModelScope.launch {
+            var targetPosition = startPositionMs
+            if (targetPosition <= 0L) {
+                val savedMs = repository.getSavedPositionMs(stream)
+                if (savedMs > 15_000L) {
+                    // Smart Resume: rewind 1 minute (60,000 ms) so user easily catches back up with the scene:
+                    // e.g. 30min -> 29min, 35min -> 34min
+                    targetPosition = if (savedMs > 60_000L) (savedMs - 60_000L) else savedMs
+                    mainHandler.post {
+                        val resumeFormatted = formatTimeMs(targetPosition)
+                        android.widget.Toast.makeText(
+                            getApplication(),
+                            "Continuar assistindo: retomando de $resumeFormatted",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            }
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                executePlayStream(stream, targetPosition)
+            } else {
+                mainHandler.post { executePlayStream(stream, targetPosition) }
+            }
         }
     }
 
@@ -196,10 +216,10 @@ class PlayerViewModel(
 
     fun togglePlayPause() {
         if (Looper.myLooper() == Looper.getMainLooper()) {
-            if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+            if (exoPlayer.isPlaying) pause() else play()
         } else {
             mainHandler.post {
-                if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                if (exoPlayer.isPlaying) pause() else play()
             }
         }
     }
@@ -213,6 +233,15 @@ class PlayerViewModel(
     }
 
     fun pause() {
+        val pos = exoPlayer.currentPosition
+        val current = _playerState.value.currentStream
+        if (current != null && pos > 5_000L) {
+            val dur = exoPlayer.duration.coerceAtLeast(0L)
+            val durSec = if (dur > 0) dur / 1000L else current.durationSeconds
+            viewModelScope.launch {
+                repository.saveHistory(current.copy(durationSeconds = durSec), pos)
+            }
+        }
         if (Looper.myLooper() == Looper.getMainLooper()) {
             exoPlayer.pause()
         } else {
@@ -267,7 +296,15 @@ class PlayerViewModel(
 
     private fun executeStopPlayback() {
         val current = _playerState.value.currentStream
+        val pos = exoPlayer.currentPosition
         if (current != null) {
+            if (pos > 5_000L) {
+                val dur = exoPlayer.duration.coerceAtLeast(0L)
+                val durSec = if (dur > 0) dur / 1000L else current.durationSeconds
+                viewModelScope.launch {
+                    repository.saveHistory(current.copy(durationSeconds = durSec), pos)
+                }
+            }
             repository.notifyPlayerClosed(current.url)
         }
         exoPlayer.stop()
@@ -284,6 +321,8 @@ class PlayerViewModel(
         }
     }
 
+    private var lastSavedProgressMs = 0L
+
     private fun startPositionTracker() {
         positionTrackerJob?.cancel()
         positionTrackerJob = viewModelScope.launch {
@@ -297,9 +336,28 @@ class PlayerViewModel(
                             totalDurationMs = if (dur > 0) dur else it.totalDurationMs
                         )
                     }
+                    val curStream = _playerState.value.currentStream
+                    if (curStream != null && pos > 5_000L && Math.abs(pos - lastSavedProgressMs) >= 4_000L) {
+                        lastSavedProgressMs = pos
+                        val durSec = if (dur > 0) dur / 1000L else curStream.durationSeconds
+                        repository.saveHistory(curStream.copy(durationSeconds = durSec), pos)
+                    }
                 }
                 delay(1000)
             }
+        }
+    }
+
+    private fun formatTimeMs(ms: Long): String {
+        if (ms <= 0L) return "00:00"
+        val totalSeconds = ms / 1000
+        val hours = totalSeconds / 3600
+        val minutes = (totalSeconds % 3600) / 60
+        val seconds = totalSeconds % 60
+        return if (hours > 0) {
+            String.format(java.util.Locale.getDefault(), "%d:%02d:%02d", hours, minutes, seconds)
+        } else {
+            String.format(java.util.Locale.getDefault(), "%02d:%02d", minutes, seconds)
         }
     }
 
