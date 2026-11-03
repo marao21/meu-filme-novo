@@ -6,6 +6,7 @@ import android.net.Uri
 import android.view.KeyEvent
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -161,69 +162,6 @@ fun TVPlayerFocusButton(
     }
 }
 
-@Composable
-fun TVPlayerFocusPill(
-    text: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    focusRequester: FocusRequester? = null,
-    testTag: String = ""
-) {
-    var isFocused by remember { mutableStateOf(false) }
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(20.dp),
-        color = if (isFocused) SystemBgSoft else SystemPillBg,
-        contentColor = SystemText,
-        border = BorderStroke(
-            if (isFocused) 2.dp else 1.dp,
-            if (isFocused) SystemAccent else SystemLineSoft
-        ),
-        modifier = modifier
-            .testTag(testTag)
-            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .onFocusChanged { isFocused = it.isFocused }
-            .onKeyEvent { keyEvent ->
-                if (keyEvent.type == KeyEventType.KeyDown) {
-                    when (keyEvent.nativeKeyEvent.keyCode) {
-                        KeyEvent.KEYCODE_DPAD_CENTER,
-                        KeyEvent.KEYCODE_ENTER,
-                        KeyEvent.KEYCODE_NUMPAD_ENTER,
-                        KeyEvent.KEYCODE_SPACE,
-                        KeyEvent.KEYCODE_BUTTON_A -> {
-                            onClick()
-                            true
-                        }
-                        else -> false
-                    }
-                } else false
-            }
-            .focusable()
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            if (icon != null) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = if (isFocused) SystemAccent else SystemText,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-            }
-            Text(
-                text = text,
-                color = if (isFocused) SystemAccent else SystemText,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
-    }
-}
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -234,6 +172,7 @@ fun PlayerScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    BackHandler { onNavigateBack() }
     val state by viewModel.playerState.collectAsState()
 
     var showControls by remember { mutableStateOf(true) }
@@ -531,141 +470,16 @@ fun PlayerScreen(
             Box(
                 modifier = Modifier.fillMaxSize()
             ) {
-                // Top Bar with soft shadow gradient
+                // Clean top area - touch-back target for touch devices without UI clutter
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.TopCenter)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(SystemShadowHeader, SystemShadowHeader.copy(alpha = 0.5f), Color.Transparent)
-                            )
-                        )
-                        .padding(horizontal = 20.dp, vertical = 12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TVPlayerFocusButton(
-                            onClick = onNavigateBack,
-                            containerColor = SystemBgSoft.copy(alpha = 0.85f),
-                            focusBorderColor = SystemAccent,
-                            testTag = "player_btn_back"
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Voltar",
-                                tint = SystemText
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        // Stream badge (HLS or MP4)
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = SystemPanel.copy(alpha = 0.9f),
-                            border = BorderStroke(1.dp, if (stream.isHls) SystemHls else SystemMp4)
-                        ) {
-                            Text(
-                                text = if (stream.isHls) "HLS" else "MP4",
-                                color = if (stream.isHls) SystemHls else SystemMp4,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.weight(1f))
-
-                        // Lock button
-                        TVPlayerFocusButton(
-                            onClick = { viewModel.toggleLock() },
-                            containerColor = SystemBgSoft.copy(alpha = 0.85f),
-                            focusBorderColor = SystemAccent,
-                            testTag = "player_btn_lock"
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.LockOpen,
-                                contentDescription = "Bloquear tela",
-                                tint = SystemMuted,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        // Aspect ratio cycle
-                        TVPlayerFocusButton(
-                            onClick = { viewModel.cycleResizeMode() },
-                            containerColor = SystemBgSoft.copy(alpha = 0.85f),
-                            focusBorderColor = SystemAccent,
-                            testTag = "player_btn_aspect"
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AspectRatio,
-                                contentDescription = "Ajustar proporção",
-                                tint = SystemMuted,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        // Speed selector
-                        TVPlayerFocusButton(
-                            onClick = {
-                                val nextSpeed = when (state.playbackSpeed) {
-                                    1.0f -> 1.25f
-                                    1.25f -> 1.5f
-                                    1.5f -> 2.0f
-                                    2.0f -> 0.75f
-                                    else -> 1.0f
-                                }
-                                viewModel.setPlaybackSpeed(nextSpeed)
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            containerColor = SystemBgSoft.copy(alpha = 0.85f),
-                            focusBorderColor = SystemAccent,
-                            testTag = "player_btn_speed"
-                        ) {
-                            Text(
-                                text = "${state.playbackSpeed}x",
-                                color = SystemAccent,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        // External player intent
-                        TVPlayerFocusButton(
-                            onClick = {
-                                try {
-                                    val intent = Intent(Intent.ACTION_VIEW).apply {
-                                        setDataAndType(Uri.parse(stream.url), if (stream.isHls) "application/x-mpegURL" else "video/*")
-                                    }
-                                    context.startActivity(Intent.createChooser(intent, "Abrir com app externo"))
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "Nenhum player externo disponível", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            containerColor = SystemBgSoft.copy(alpha = 0.85f),
-                            focusBorderColor = SystemAccent,
-                            testTag = "player_btn_external"
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.OpenInNew,
-                                contentDescription = "Player Externo",
-                                tint = SystemMuted,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                }
+                        .align(Alignment.TopStart)
+                        .size(56.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { onNavigateBack() }
+                )
 
                 // Center Play/Pause Button
                 Box(
@@ -722,29 +536,7 @@ fun PlayerScreen(
                         overflow = TextOverflow.Ellipsis
                     )
 
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Action Pills (like [ More Info ] [ Episodes ] in user screenshot)
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        TVPlayerFocusPill(
-                            text = "Mais Informações",
-                            icon = Icons.Default.Info,
-                            onClick = onNavigateBack,
-                            testTag = "pill_mais_info"
-                        )
-
-                        TVPlayerFocusPill(
-                            text = "Catálogo",
-                            icon = Icons.Default.Movie,
-                            onClick = onNavigateToBrowse,
-                            testTag = "pill_catalogo"
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     // Sleek Modern Timeline
                     var isSliderFocused by remember { mutableStateOf(false) }
