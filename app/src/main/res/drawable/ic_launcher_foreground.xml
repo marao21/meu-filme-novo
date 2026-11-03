@@ -1,26 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <!-- Movie Slate Frame -->
-    <path
-        android:fillColor="#1E2235"
-        android:pathData="M30,30 h48 a6,6 0 0,1 6,6 v36 a6,6 0 0,1 -6,6 h-48 a6,6 0 0,1 -6,-6 v-36 a6,6 0 0,1 6,-6 z" />
-
-    <!-- Top film reel strip / clapper top accents -->
-    <path
-        android:fillColor="#8B5CF6"
-        android:pathData="M30,30 h48 a6,6 0 0,1 6,6 v6 h-60 v-6 a6,6 0 0,1 6,-6 z" />
-
-    <!-- Clapper diagonal stripes -->
-    <path
-        android:fillColor="#00E5FF"
-        android:pathData="M36,30 l6,12 h6 l-6,-12 z M52,30 l6,12 h6 l-6,-12 z M68,30 l6,12 h5 a6,6 0 0,0 1,-4 l-4,-8 z" />
-
-    <!-- Big Center Play Button (Glow + Icon) -->
-    <path
-        android:fillColor="#00E5FF"
-        android:pathData="M48,50 L66,61 L48,72 Z" />
-</vector>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:width="66dp"
+        android:height="66dp"
+        android:drawable="@drawable/img_app_icon_m"
+        android:gravity="center" />
+</layer-list>

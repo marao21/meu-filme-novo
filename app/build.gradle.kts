@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.filmemeu.stream"
     minSdk = 24
     targetSdk = 36
-    versionCode = 10
-    versionName = "1.9"
+    versionCode = 15
+    versionName = "2.4"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

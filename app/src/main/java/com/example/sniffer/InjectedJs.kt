@@ -133,6 +133,7 @@ object InjectedJs {
                 }, true);
 
                 // TV Box Menu Controller - smoothly opens/closes without double-click or accidental close
+                window.__menuOpenedAt = 0;
                 window.__toggleMenu = function() {
                     try {
                         var menuBtn = document.getElementById('btn-menu');
@@ -140,12 +141,18 @@ object InjectedJs {
                         if (!menuBtn || !painel) return;
                         var willOpen = painel.classList.contains('hidden');
                         if (willOpen) {
+                            window.__menuOpenedAt = Date.now();
                             painel.classList.remove('hidden');
                             menuBtn.setAttribute('aria-expanded', 'true');
-                            var firstItem = painel.querySelector('.menu-item');
-                            if (firstItem) {
-                                firstItem.focus();
-                            }
+                            // Delay focusing the first item so the remote's OK press doesn't accidentally trigger it!
+                            setTimeout(function() {
+                                if (painel && !painel.classList.contains('hidden')) {
+                                    var firstItem = painel.querySelector('.menu-item');
+                                    if (firstItem) {
+                                        firstItem.focus();
+                                    }
+                                }
+                            }, 250);
                         } else {
                             painel.classList.add('hidden');
                             menuBtn.setAttribute('aria-expanded', 'false');
@@ -153,6 +160,24 @@ object InjectedJs {
                         }
                     } catch(e) {}
                 };
+
+                // Prevent accidental carryover clicks on menu items when pressing OK on #btn-menu
+                document.addEventListener('click', function(e) {
+                    var btnMenu = e.target.closest('#btn-menu, .menu-btn');
+                    if (btnMenu) {
+                        window.__menuOpenedAt = Date.now();
+                    }
+                    var menuItem = e.target.closest('.menu-item');
+                    if (menuItem) {
+                        var elapsed = Date.now() - (window.__menuOpenedAt || 0);
+                        if (elapsed < 450) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            e.stopImmediatePropagation();
+                            return false;
+                        }
+                    }
+                }, true);
 
                 // Helper to enter fullscreen
                 function triggerFullscreen(v) {
@@ -219,16 +244,18 @@ object InjectedJs {
                         var painel = document.getElementById('menu-painel');
                         var isMenuOpen = painel && !painel.classList.contains('hidden');
 
-                        // If on menu button, toggle menu cleanly
+                        // If on menu button, native click will handle it - do NOT duplicate toggle!
                         if (cur && (cur.id === 'btn-menu' || cur.classList.contains('menu-btn'))) {
-                            window.__toggleMenu();
-                            return "menu_toggled";
+                            return "btn_menu_native";
                         }
 
-                        // If inside open menu panel, click the active item once
+                        // If inside open menu panel, guard against accidental clicks during cooldown
                         if (isMenuOpen && cur && cur.closest('#menu-painel')) {
-                            cur.click();
-                            return "menu_item_clicked";
+                            if (Date.now() - (window.__menuOpenedAt || 0) < 450) {
+                                return "menu_item_cooldown";
+                            }
+                            // Native key will activate it
+                            return "menu_item_native";
                         }
 
                         var detalhe = document.getElementById('detalhe');
@@ -783,6 +810,18 @@ object InjectedJs {
 
                 window.__handleBackNavigation = function() {
                     try {
+                        // CASE 0: If menu-painel is open, dismiss the menu panel cleanly
+                        var painel = document.getElementById('menu-painel');
+                        if (painel && !painel.classList.contains('hidden')) {
+                            painel.classList.add('hidden');
+                            var menuBtn = document.getElementById('btn-menu');
+                            if (menuBtn) {
+                                menuBtn.setAttribute('aria-expanded', 'false');
+                                menuBtn.focus();
+                            }
+                            return "menu_closed";
+                        }
+
                         var sf = document.getElementById('site-frame');
                         var np = document.getElementById('nosso-player');
                         var dt = document.getElementById('detalhe');

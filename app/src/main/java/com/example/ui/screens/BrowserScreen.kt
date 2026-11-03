@@ -264,6 +264,9 @@ fun BrowserScreen(
             ) { result ->
                 val cleanResult = result?.replace("\"", "")?.trim() ?: ""
                 when (cleanResult) {
+                    "menu_closed" -> {
+                        // Menu panel was closed cleanly with Back button on TV Box
+                    }
                     "returned_to_detalhe" -> {
                         isUserInMovie = true
                         userRequestedWatch = false
