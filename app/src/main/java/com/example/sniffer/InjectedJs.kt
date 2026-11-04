@@ -297,7 +297,15 @@ object InjectedJs {
                             '.menu-item:focus, .menu-item:hover { background-color: #141f36 !important; color: #38bdf8 !important; }',
                             '#detalhe-assistir, .btn-assistir { background-color: #0ea5e9 !important; color: #0f172a !important; font-weight: bold !important; }',
                             '#nosso-player, .nosso-player { background: #0f172a !important; }',
-                            '.np-controles { background: linear-gradient(to top, rgba(5, 9, 18, 0.95), rgba(5, 9, 18, 0.6), transparent) !important; }'
+                            '.np-controles { background: linear-gradient(to top, rgba(5, 9, 18, 0.95), rgba(5, 9, 18, 0.6), transparent) !important; }',
+                            '#detalhe-sinopse, .detalhe-sinopse { display: -webkit-box !important; -webkit-box-orient: vertical !important; -webkit-line-clamp: 5 !important; visibility: visible !important; opacity: 1 !important; color: #f1f5f9 !important; font-size: 16px !important; line-height: 1.55 !important; text-shadow: 0 2px 8px rgba(0,0,0,0.98), 0 0 3px #000 !important; margin: 8px 0 16px !important; max-width: 860px !important; z-index: 30 !important; position: relative !important; overflow: visible !important; }',
+                            '.tv-mode #detalhe-sinopse, .tv-mode .detalhe-sinopse { display: -webkit-box !important; visibility: visible !important; opacity: 1 !important; color: #f1f5f9 !important; font-size: 16px !important; line-height: 1.5 !important; max-width: 900px !important; margin: 8px 0 16px !important; }',
+                            '.detalhe-palco { height: auto !important; min-height: min(75vh, 640px) !important; overflow: visible !important; }',
+                            '.detalhe-conteudo { position: relative !important; bottom: auto !important; margin-top: 160px !important; padding-bottom: 24px !important; z-index: 25 !important; }',
+                            '.detalhe-trailer { z-index: 1 !important; }',
+                            '.detalhe-sombra { z-index: 2 !important; pointer-events: none !important; }',
+                            '.detalhe-titulo, #detalhe-titulo { z-index: 25 !important; position: relative !important; display: block !important; visibility: visible !important; }',
+                            '.detalhe-meta, #detalhe-meta { z-index: 25 !important; position: relative !important; display: flex !important; visibility: visible !important; }'
                         ].join('\n');
                         if (document.head && !document.getElementById('skip-tempo-style')) {
                             document.head.appendChild(style);
@@ -591,6 +599,75 @@ object InjectedJs {
                     }
                     return "";
                 }
+
+                // Guarantee synopsis visibility & fetch from TMDB if empty or placeholder
+                function garantirSinopse() {
+                    try {
+                        var dt = document.getElementById('detalhe');
+                        if (!dt || dt.classList.contains('hidden') || dt.style.display === 'none') return;
+                        var dtSin = document.getElementById('detalhe-sinopse') || dt.querySelector('.detalhe-sinopse');
+                        if (!dtSin) return;
+
+                        var curText = (dtSin.textContent || '').trim();
+                        var precisaBuscar = !curText || curText.length < 5 || curText.indexOf('Sem sinopse') !== -1;
+                        if (!precisaBuscar) return;
+
+                        var dtTitle = document.getElementById('detalhe-titulo') || dt.querySelector('.detalhe-titulo');
+                        var titulo = dtTitle ? dtTitle.textContent.trim() : (window.__currentMovieTitle || '');
+                        if (!titulo || isGenericTitle(titulo)) return;
+
+                        if (window.__lastSinopseBusca === titulo && (Date.now() - (window.__lastSinopseBuscaTime || 0)) < 15000) {
+                            return;
+                        }
+                        window.__lastSinopseBusca = titulo;
+                        window.__lastSinopseBuscaTime = Date.now();
+
+                        var tmdbId = (window.__activeMovieMeta && window.__activeMovieMeta.tmdb_id) || dt.dataset.id || dt.dataset.tmdbId || '';
+                        var kind = (window.__activeMovieMeta && window.__activeMovieMeta.kind) || dt.dataset.tipo || 'filme';
+                        var endpoint = (kind === 'serie' || kind === 'anime') ? 'tv' : 'movie';
+                        var key = "$tmdbKey";
+
+                        function aplicarSinopse(overview) {
+                            if (overview && overview.trim()) {
+                                dtSin.textContent = overview.trim();
+                                dtSin.style.display = '-webkit-box';
+                                dtSin.style.visibility = 'visible';
+                                dtSin.style.opacity = '1';
+                                if (window.__savedMovieDetail) {
+                                    window.__savedMovieDetail.sinopse = overview.trim();
+                                }
+                            }
+                        }
+
+                        if (tmdbId) {
+                            var url = 'https://api.themoviedb.org/3/' + endpoint + '/' + tmdbId + '?api_key=' + key + '&language=pt-BR';
+                            fetch(url).then(function(r){ return r.json(); }).then(function(data){
+                                if (data && data.overview && data.overview.trim()) {
+                                    aplicarSinopse(data.overview);
+                                } else {
+                                    buscarPorTitulo(titulo);
+                                }
+                            }).catch(function(){
+                                buscarPorTitulo(titulo);
+                            });
+                        } else {
+                            buscarPorTitulo(titulo);
+                        }
+
+                        function buscarPorTitulo(t) {
+                            var sUrl = 'https://api.themoviedb.org/3/search/multi?api_key=' + key + '&query=' + encodeURIComponent(t) + '&language=pt-BR';
+                            fetch(sUrl).then(function(r){ return r.json(); }).then(function(data){
+                                if (data && data.results && data.results.length) {
+                                    var match = data.results[0];
+                                    if (match && match.overview && match.overview.trim()) {
+                                        aplicarSinopse(match.overview);
+                                    }
+                                }
+                            }).catch(function(){});
+                        }
+                    } catch(e) {}
+                }
+                setInterval(garantirSinopse, 1200);
 
                 function checkCatalogAndMovieState() {
                     try {
@@ -1025,6 +1102,29 @@ object InjectedJs {
                                 }
                             } catch(e) {}
                         };
+
+                        // Intercept APK download clicks (buttons, links, banners, footer)
+                        var btnApk = e.target.closest('#btn-apk, #apk-faixa-baixar, .btn-apk, .apk-btn, a[href*=".apk"], a[href*="/releases/download/"], #btn-baixar-apk, #apk-download-link');
+                        if (!btnApk) {
+                            var elTxt = (e.target.innerText || e.target.textContent || '').toLowerCase();
+                            if (elTxt.indexOf('apk') !== -1 && (elTxt.indexOf('baixar') !== -1 || elTxt.indexOf('atualiz') !== -1)) {
+                                btnApk = e.target;
+                            }
+                        }
+                        if (btnApk) {
+                            var apkUrl = btnApk.href || btnApk.getAttribute('href') || btnApk.getAttribute('data-href') || btnApk.getAttribute('data-url') || '';
+                            if (!apkUrl || apkUrl === '#' || apkUrl.indexOf('javascript') !== -1) {
+                                apkUrl = "https://github.com/marao21/meu-filme-novo/releases/download/apk-latest/meu-filme-novo-debug.apk";
+                            }
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (window.AndroidBridge && window.AndroidBridge.onDownloadApk) {
+                                window.AndroidBridge.onDownloadApk(apkUrl);
+                            } else {
+                                window.location.href = apkUrl;
+                            }
+                            return;
+                        }
 
                         var card = e.target.closest('.cat-card, .poster, .retomar-card');
                         if (card) {

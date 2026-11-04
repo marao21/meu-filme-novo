@@ -615,9 +615,7 @@ fun BrowserScreen(
                             // Um WebView ignora downloads: sem isto, o link do
                             // APK no site nao faz nada, nem erro aparece.
                             setDownloadListener { url, agente, _, tipo, _ ->
-                                if (BaixarAtualizacao.ehApk(url, tipo)) {
-                                    BaixarAtualizacao.baixar(ctx, url, agente ?: APP_USER_AGENT)
-                                }
+                                BaixarAtualizacao.baixar(ctx, url, agente ?: APP_USER_AGENT)
                             }
 
                             // JavaScript Native Bridge - Thread-safe
@@ -738,6 +736,14 @@ fun BrowserScreen(
                                 }
 
                                 @JavascriptInterface
+                                fun onDownloadApk(url: String?) {
+                                    val clean = url?.trim()
+                                    if (!clean.isNullOrEmpty()) {
+                                        BaixarAtualizacao.baixar(ctx, clean, APP_USER_AGENT)
+                                    }
+                                }
+
+                                @JavascriptInterface
                                 fun onNavigatedToCatalog() {
                                     playerViewModel.stopPlayback()
                                     isUserInMovie = false
@@ -756,6 +762,12 @@ fun BrowserScreen(
                                     try {
                                         val reqUrl = request?.url?.toString() ?: return false
                                         val lower = reqUrl.lowercase()
+
+                                        // 0. Intercept APK downloads (e.g. GitHub Releases / direct APK updates)
+                                        if (BaixarAtualizacao.ehApk(reqUrl, null) || lower.contains(".apk") || lower.contains("/releases/download/")) {
+                                            BaixarAtualizacao.baixar(ctx, reqUrl, APP_USER_AGENT)
+                                            return true
+                                        }
 
                                         // 1. Block external app schemes (e.g. shopee://, market://, intent://)
                                         if (!reqUrl.startsWith("http://") && !reqUrl.startsWith("https://")) {
@@ -797,7 +809,7 @@ fun BrowserScreen(
                                             return true
                                         }
 
-                                        // 4. Strict whitelist: only stay in our app system and authorized embeds (e.g. YouTube trailers)
+                                        // 4. Strict whitelist: only stay in our app system and authorized embeds (e.g. YouTube trailers, GitHub releases)
                                         val isAllowedSystem = host.isEmpty() ||
                                             host.contains("meufilme") ||
                                             host.contains("filmemeu") ||
@@ -808,6 +820,8 @@ fun BrowserScreen(
                                             host.contains("supabase") ||
                                             host.contains("themoviedb") ||
                                             host.contains("tmdb") ||
+                                            host.contains("github.com") ||
+                                            host.contains("githubusercontent.com") ||
                                             host.contains("hclod.qzz.io") ||
                                             host.contains("youtube.com") ||
                                             host.contains("youtube-nocookie.com") ||
