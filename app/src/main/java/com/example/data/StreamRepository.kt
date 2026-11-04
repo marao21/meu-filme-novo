@@ -169,6 +169,9 @@ class StreamRepository(
     suspend fun getSavedPositionMs(stream: StreamMedia): Long {
         return try {
             var entity = historyDao.findByUrlOrTitle(stream.url, stream.title)
+            if (entity == null && !isGenericTitle(stream.title)) {
+                entity = historyDao.findByTitle(stream.title)
+            }
             if (entity == null) {
                 val currentTitle = _currentMovieTitle.value
                 if (!currentTitle.isNullOrBlank() && !isGenericTitle(currentTitle)) {
@@ -212,6 +215,12 @@ class StreamRepository(
         if (positionMs < 5_000L || isGenericTitle(title)) return
         try {
             val existing = historyDao.findByTitle(title)
+            // Guard: Never downgrade an existing watch progress (e.g. 40 minutes) to early seconds (< 30s)
+            val effectivePos = if (existing != null && existing.lastPositionMs > 60_000L && positionMs < 30_000L) {
+                existing.lastPositionMs
+            } else {
+                positionMs
+            }
             val entity = HistoryEntity(
                 id = existing?.id ?: java.util.UUID.randomUUID().toString(),
                 url = existing?.url ?: "saved://$title",
@@ -219,7 +228,7 @@ class StreamRepository(
                 format = existing?.format ?: "HLS",
                 isHls = existing?.isHls ?: true,
                 durationSeconds = if (durationSec > 0) durationSec else (existing?.durationSeconds ?: 0L),
-                lastPositionMs = positionMs,
+                lastPositionMs = effectivePos,
                 timestamp = System.currentTimeMillis(),
                 pageUrl = existing?.pageUrl ?: ""
             )
@@ -233,11 +242,18 @@ class StreamRepository(
         try {
             if (lastPositionMs < 5_000L) return
             val existing = historyDao.findByUrlOrTitle(stream.url, stream.title)
+                ?: if (!isGenericTitle(stream.title)) historyDao.findByTitle(stream.title) else null
             val entityId = existing?.id ?: stream.id
             val resolvedTitle = if (!isGenericTitle(stream.title)) {
                 stream.title
             } else {
                 existing?.title ?: _currentMovieTitle.value ?: stream.title
+            }
+            // Guard: Never overwrite a solid progress position (e.g. 40 minutes) with the first seconds (<30s) of playback!
+            val effectivePos = if (existing != null && existing.lastPositionMs > 60_000L && lastPositionMs < 30_000L) {
+                existing.lastPositionMs
+            } else {
+                lastPositionMs
             }
             val durSec = if (stream.durationSeconds > 0) stream.durationSeconds else (existing?.durationSeconds ?: 0L)
             val entity = HistoryEntity(
@@ -247,7 +263,7 @@ class StreamRepository(
                 format = stream.format,
                 isHls = stream.isHls,
                 durationSeconds = durSec,
-                lastPositionMs = lastPositionMs,
+                lastPositionMs = effectivePos,
                 timestamp = System.currentTimeMillis(),
                 pageUrl = stream.pageUrl
             )

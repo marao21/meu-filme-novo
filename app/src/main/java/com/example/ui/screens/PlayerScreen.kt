@@ -40,6 +40,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Lock
@@ -58,6 +59,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.ui.window.Dialog
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -179,7 +181,6 @@ fun PlayerScreen(
     var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var isSeeking by remember { mutableStateOf(false) }
     var seekProgress by remember { mutableFloatStateOf(0f) }
-
     val resetControlsTimer: () -> Unit = {
         showControls = true
         lastInteractionTime = System.currentTimeMillis()
@@ -378,15 +379,16 @@ fun PlayerScreen(
                 }
             },
             update = { playerView ->
-                playerView.player = viewModel.exoPlayer
-                playerView.isFocusable = true
-                playerView.isFocusableInTouchMode = true
-                playerView.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
-                playerView.keepScreenOn = true
-                playerView.resizeMode = when (state.resizeMode) {
+                if (playerView.player != viewModel.exoPlayer) {
+                    playerView.player = viewModel.exoPlayer
+                }
+                val targetResize = when (state.resizeMode) {
                     1 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
                     2 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+                }
+                if (playerView.resizeMode != targetResize) {
+                    playerView.resizeMode = targetResize
                 }
             },
             modifier = Modifier.fillMaxSize()
@@ -507,8 +509,8 @@ fun PlayerScreen(
                     }
                 }
 
-                // Bottom Section: Netflix TV style matching user screenshot
-                // Prominent Movie Title, Quick Action Pills & Sleek Timeline
+                // Bottom Section: Clean Cinema Netflix TV style matching user screenshot
+                // Prominent Movie Title & Sleek Timeline
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -525,7 +527,7 @@ fun PlayerScreen(
                         )
                         .padding(horizontal = 24.dp, vertical = 20.dp)
                 ) {
-                    // Big Prominent Movie / Series Title
+                    // Big Prominent Movie / Series Title (Clean Cinema style)
                     Text(
                         text = stream.title.ifEmpty { "Filme" },
                         color = SystemText,
@@ -608,6 +610,7 @@ fun PlayerScreen(
                 }
             }
         }
+
     }
 }
 
@@ -696,3 +699,5 @@ private fun formatTimeMs(ms: Long): String {
         String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
     }
 }
+
+

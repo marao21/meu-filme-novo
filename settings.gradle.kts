@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "FilmeMeu"
+rootProject.name = "MARIOFLIX"
 
 include(":app")

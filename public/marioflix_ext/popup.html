@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marioflix</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <div class="header-brand">
+        <img class="brand-icon" src="icons32.png" alt="Marioflix"><h1 class="app-title">Marioflix</h1>
+        <span class="app-version">v1.3.2</span>
+      </div>
+      <button id="btn-refresh" class="btn-icon" title="Atualizar">↻</button>
+    </header>
+
+    <section class="manual-section">
+      <label class="section-label">Adicionar link manualmente:</label>
+      <div class="manual-input-group">
+        <input type="text" id="input-manual-url" placeholder="Cole o link .mp4 ou .m3u8 aqui..." />
+        <button id="btn-add-manual" class="btn-action">Analisar</button>
+      </div>
+    </section>
+
+    <main class="app-main">
+      <section id="preview-panel" class="preview-panel state-hidden">
+        <div class="preview-heading">
+          <span id="preview-title">Pré-visualização</span>
+          <span id="preview-quality" class="quality-pill">AUTO</span>
+        </div>
+        <div class="video-preview">
+          <video id="preview-player" controls playsinline preload="none">
+            Seu navegador não suporta a pré-visualização.
+          </video>
+        </div>
+        <p id="preview-status" class="preview-status">A reprodução começa somente quando você solicitar.</p>
+      </section>
+
+      <div id="state-loading" class="state-box">
+        <div class="spinner"></div>
+        <p class="state-text">Buscando transmissões de vídeo...</p>
+      </div>
+
+      <div id="state-empty" class="state-box state-hidden">
+        <div class="state-icon">🎬</div>
+        <p class="state-title">Nenhum vídeo detectado</p>
+        <p class="state-text">Cole um link acima ou dê PLAY em um vídeo na página para capturar o link automaticamente.</p>
+      </div>
+
+      <div id="state-error" class="state-box state-hidden">
+        <div class="state-icon">⚠️</div>
+        <p class="state-title">Erro ao carregar</p>
+        <p id="error-message" class="state-text">Não foi possível ler os dados da aba.</p>
+      </div>
+
+      <div id="state-list" class="video-container state-hidden">
+        <div id="video-items-list" class="video-list"></div>
+      </div>
+    </main>
+
+    <footer class="app-footer">
+      <p class="footer-status">Cole qualquer link direto para assistir a prévia ou baixar.</p>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

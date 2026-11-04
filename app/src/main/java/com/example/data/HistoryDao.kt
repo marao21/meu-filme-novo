@@ -21,12 +21,12 @@ interface HistoryDao {
     @Query("DELETE FROM playback_history")
     suspend fun clearAll()
 
-    @Query("SELECT * FROM playback_history WHERE url = :url LIMIT 1")
+    @Query("SELECT * FROM playback_history WHERE LOWER(TRIM(url)) = LOWER(TRIM(:url)) LIMIT 1")
     suspend fun findByUrl(url: String): HistoryEntity?
 
-    @Query("SELECT * FROM playback_history WHERE title = :title ORDER BY timestamp DESC LIMIT 1")
+    @Query("SELECT * FROM playback_history WHERE LOWER(TRIM(title)) = LOWER(TRIM(:title)) ORDER BY timestamp DESC LIMIT 1")
     suspend fun findByTitle(title: String): HistoryEntity?
 
-    @Query("SELECT * FROM playback_history WHERE url = :url OR (title = :title AND title != 'Filme Selecionado') ORDER BY timestamp DESC LIMIT 1")
+    @Query("SELECT * FROM playback_history WHERE LOWER(TRIM(url)) = LOWER(TRIM(:url)) OR (LOWER(TRIM(title)) = LOWER(TRIM(:title)) AND title != 'Filme Selecionado') ORDER BY timestamp DESC LIMIT 1")
     suspend fun findByUrlOrTitle(url: String, title: String): HistoryEntity?
 }

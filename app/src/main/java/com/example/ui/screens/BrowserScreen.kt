@@ -705,6 +705,39 @@ fun BrowserScreen(
                                 }
 
                                 @JavascriptInterface
+                                fun onAssistirClicked(title: String?, savedSec: Long) {
+                                    handleAssistirClicked(title, savedSec)
+                                }
+
+                                @JavascriptInterface
+                                fun onCloudProgressLoaded(title: String?, second: Long, durationSec: Long) {
+                                    val clean = title?.trim()
+                                    if (!clean.isNullOrEmpty() && !repository.isGenericTitle(clean) && second > 10L) {
+                                        playerViewModel.updateCloudProgress(clean, second * 1000L, durationSec)
+                                    }
+                                }
+
+                                @JavascriptInterface
+                                fun onCloudProgressLoaded(title: String?, second: Double, durationSec: Double) {
+                                    onCloudProgressLoaded(title, second.toLong(), durationSec.toLong())
+                                }
+
+                                @JavascriptInterface
+                                fun onSyncLocalProgress(title: String?, second: Long, durationSec: Long) {
+                                    val clean = title?.trim()
+                                    if (!clean.isNullOrEmpty() && !repository.isGenericTitle(clean) && second > 10L) {
+                                        coroutineScope.launch {
+                                            repository.saveProgressForTitle(clean, second * 1000L, durationSec)
+                                        }
+                                    }
+                                }
+
+                                @JavascriptInterface
+                                fun onSyncLocalProgress(title: String?, second: Double, durationSec: Double) {
+                                    onSyncLocalProgress(title, second.toLong(), durationSec.toLong())
+                                }
+
+                                @JavascriptInterface
                                 fun onNavigatedToCatalog() {
                                     playerViewModel.stopPlayback()
                                     isUserInMovie = false

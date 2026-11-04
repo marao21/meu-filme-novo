@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "Marioflix",
+  "version": "1.3.2",
+  "description": "Marioflix — detector e pré-visualizador leve de vídeos MP4 e HLS.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons16.png",
+      "32": "icons32.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ]
+    }
+  ],
+  "permissions": [
+    "webRequest",
+    "downloads",
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "icons": {
+    "16": "icons16.png",
+    "32": "icons32.png",
+    "48": "icons48.png",
+    "128": "icons128.png"
+  }
+}

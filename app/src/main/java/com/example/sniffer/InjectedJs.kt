@@ -86,9 +86,15 @@ object InjectedJs {
 
                 // Auto visitor login & catalog unlock so #login-page never blocks the user on first launch,
                 // BUT if the user explicitly clicked "Sair", respect their wish so they can log in or switch accounts!
+                // CRITICAL: If the user already has an active account session, respect it and never force visitante mode!
                 function autoUnlockCatalog() {
                     try {
                         if (window.__userLoggedOut || sessionStorage.getItem('bvd:logged_out') === '1') {
+                            return;
+                        }
+                        var user = (window.bvdAuth && window.bvdAuth.usuarioAtual && window.bvdAuth.usuarioAtual());
+                        if (user) {
+                            try { localStorage.removeItem('bvd:visitante'); } catch(e) {}
                             return;
                         }
                         localStorage.setItem('bvd:visitante', '1');
@@ -874,20 +880,31 @@ object InjectedJs {
                             return;
                         }
 
-                        function getSavedProgressForTitle(title) {
+                        function getBestSavedProgress(title, tmdbId) {
                             try {
-                                if (!title) return 0;
+                                var clean = (title || '').trim().toLowerCase();
+                                var id = tmdbId || (window.__activeMovieMeta ? window.__activeMovieMeta.tmdb_id : '');
                                 var raw = localStorage.getItem('bvd:progresso');
-                                if (!raw) return 0;
-                                var map = JSON.parse(raw);
-                                if (!map || typeof map !== 'object') return 0;
-                                var clean = title.trim().toLowerCase();
-                                for (var k in map) {
-                                    var item = map[k];
-                                    if (item && item.titulo) {
-                                        var itTitle = (item.titulo || '').trim().toLowerCase();
-                                        if (itTitle === clean || itTitle.indexOf(clean) !== -1 || clean.indexOf(itTitle) !== -1) {
-                                            return Math.round(item.segundo || 0);
+                                if (raw) {
+                                    var map = JSON.parse(raw);
+                                    if (map && typeof map === 'object') {
+                                        if (id) {
+                                            var direct = map['filme:' + id] || map['serie:' + id] || map[id];
+                                            if (direct && typeof direct.segundo === 'number' && direct.segundo > 10) {
+                                                return Math.round(direct.segundo);
+                                            }
+                                        }
+                                        if (clean) {
+                                            for (var k in map) {
+                                                var entry = map[k];
+                                                if (!entry) continue;
+                                                var entryTitle = (entry.titulo || entry.title || '').trim().toLowerCase();
+                                                if (entryTitle && (entryTitle === clean || entryTitle.indexOf(clean) !== -1 || clean.indexOf(entryTitle) !== -1)) {
+                                                    if (typeof entry.segundo === 'number' && entry.segundo > 10) {
+                                                        return Math.round(entry.segundo);
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -895,54 +912,144 @@ object InjectedJs {
                             return 0;
                         }
 
+                        function queryAndReportSavedProgress(title, tmdbId) {
+                            try {
+                                if (!title || isGenericTitle(title)) return;
+                                var clean = title.trim();
+                                var id = tmdbId || (window.__activeMovieMeta ? window.__activeMovieMeta.tmdb_id : '');
+
+                                // 1. Immediate local storage check
+                                var localSec = getBestSavedProgress(clean, id);
+                                if (localSec > 10 && window.AndroidBridge && window.AndroidBridge.onCloudProgressLoaded) {
+                                    window.AndroidBridge.onCloudProgressLoaded(clean, localSec, 0);
+                                }
+
+                                // 2. Supabase cloud check for cross-device sync
+                                if (window.bvdAuth && window.bvdAuth.cliente && window.bvdAuth.usuarioAtual) {
+                                    var usuario = window.bvdAuth.usuarioAtual();
+                                    if (usuario && usuario.id) {
+                                        var query = window.bvdAuth.cliente.from('progresso').select('segundo, duracao, titulo, tmdb_id');
+                                        if (id) {
+                                            query = query.eq('tmdb_id', id);
+                                        } else {
+                                            query = query.ilike('titulo', '%' + clean + '%');
+                                        }
+                                        query.maybeSingle().then(function(res) {
+                                            if (res && res.data && res.data.segundo && res.data.segundo > 10) {
+                                                var cloudSec = Math.round(res.data.segundo);
+                                                var cloudDur = Math.round(res.data.duracao || 0);
+                                                if (window.AndroidBridge && window.AndroidBridge.onCloudProgressLoaded) {
+                                                    window.AndroidBridge.onCloudProgressLoaded(clean, cloudSec, cloudDur);
+                                                }
+                                            }
+                                        }).catch(function(err) {});
+                                    }
+                                }
+                            } catch(e) {}
+                        }
+
                         window.__syncProgressToWeb = function(title, second, duration) {
                             try {
                                 if (!title || second <= 0) return;
+                                var clean = title.trim();
+                                var lower = clean.toLowerCase();
+                                var id = (window.__activeMovieMeta ? window.__activeMovieMeta.tmdb_id : '') || '';
+                                var kind = (window.__activeMovieMeta ? window.__activeMovieMeta.kind : 'filme') || 'filme';
+                                var poster = (window.__activeMovieMeta ? window.__activeMovieMeta.poster : '') || '';
+                                var backdrop = (window.__activeMovieMeta ? window.__activeMovieMeta.backdrop : '') || '';
+
+                                // 1. Local storage bvd:progresso
                                 var raw = localStorage.getItem('bvd:progresso') || '{}';
                                 var map = {};
                                 try { map = JSON.parse(raw) || {}; } catch(err) { map = {}; }
-                                var clean = title.trim().toLowerCase();
-                                var targetKey = null;
-                                for (var k in map) {
-                                    if (map[k] && map[k].titulo && map[k].titulo.trim().toLowerCase() === clean) {
-                                        targetKey = k;
-                                        break;
+                                var targetKey = id ? (kind + ':' + id) : null;
+                                if (!targetKey) {
+                                    for (var k in map) {
+                                        var it = map[k];
+                                        if (it && (it.titulo || it.title || '').trim().toLowerCase() === lower) {
+                                            targetKey = k;
+                                            break;
+                                        }
                                     }
                                 }
                                 if (!targetKey) {
-                                    var dt = document.getElementById('detalhe');
-                                    var tmdbId = (dt && (dt.getAttribute('data-id') || dt.getAttribute('data-tmdb'))) || '';
-                                    var tipo = (dt && (dt.getAttribute('data-tipo') || dt.getAttribute('data-media-type'))) || 'filme';
-                                    if (tmdbId) {
-                                        targetKey = tipo + ':' + tmdbId;
-                                    } else {
-                                        targetKey = 'filme:' + encodeURIComponent(clean.replace(/[^a-z0-9]/g, '_'));
-                                    }
+                                    targetKey = 'filme:' + encodeURIComponent(lower.replace(/[^a-z0-9]/g, '_'));
                                 }
                                 var existing = map[targetKey] || {};
                                 var dur = duration > 0 ? duration : (existing.duracao || 7200);
+                                var acabou = dur > 0 && (second / dur >= 0.90);
                                 map[targetKey] = {
                                     segundo: Math.round(second),
                                     duracao: Math.round(dur),
-                                    titulo: existing.titulo || title,
-                                    capa: existing.capa || '',
+                                    titulo: existing.titulo || clean,
+                                    poster: poster || existing.poster || '',
+                                    backdrop: backdrop || existing.backdrop || '',
+                                    terminou: acabou,
                                     visto_em: Date.now()
                                 };
                                 localStorage.setItem('bvd:progresso', JSON.stringify(map));
-                                window.dispatchEvent(new CustomEvent('bvd:progresso-atualizado', { detail: { titulo: title, segundo: second } }));
+
+                                // 2. Dispatch event so catalog updates
+                                window.dispatchEvent(new CustomEvent('bvd:progresso-atualizado', {
+                                    detail: { titulo: clean, segundo: second, duracao: dur }
+                                }));
+
+                                // 3. CLOUD SUPABASE SYNC (For all other devices)
+                                if (window.bvdAuth && window.bvdAuth.cliente && window.bvdAuth.usuarioAtual) {
+                                    var usuario = window.bvdAuth.usuarioAtual();
+                                    if (usuario && usuario.id) {
+                                        var numericId = id ? parseInt(id, 10) : null;
+                                        var tmdbVal = (numericId && !isNaN(numericId)) ? numericId : null;
+                                        var payload = {
+                                            user_id: usuario.id,
+                                            tmdb_id: tmdbVal,
+                                            kind: kind,
+                                            titulo: clean,
+                                            poster: poster || null,
+                                            backdrop: backdrop || null,
+                                            temporada: null,
+                                            episodio: null,
+                                            segundo: Math.round(second),
+                                            duracao: Math.round(dur),
+                                            terminou: acabou,
+                                            visto_em: new Date().toISOString()
+                                        };
+                                        if (tmdbVal) {
+                                            window.bvdAuth.cliente.from('progresso').upsert(payload, {
+                                                onConflict: 'user_id,tmdb_id,kind'
+                                            }).then(function(){}).catch(function(){});
+                                        } else {
+                                            window.bvdAuth.cliente.from('progresso').upsert(payload).then(function(){}).catch(function(){});
+                                        }
+                                    }
+                                }
                             } catch(e) {}
                         };
 
                         var card = e.target.closest('.cat-card, .poster, .retomar-card');
                         if (card) {
                             var titleEl = card.querySelector('.cat-title, .poster-title, .retomar-titulo, h3, h4');
-                            var t = titleEl ? titleEl.textContent : (card.getAttribute('title') || '');
+                            var t = titleEl ? titleEl.textContent : (card.getAttribute('aria-label') || card.getAttribute('title') || '');
+                            var tmdbId = card.dataset.id || card.getAttribute('data-id') || '';
+                            var badge = card.querySelector('.cat-badge');
+                            var badgeTxt = badge ? badge.textContent.toLowerCase() : '';
+                            var kind = (badgeTxt.indexOf('sér') !== -1 || badgeTxt.indexOf('ser') !== -1) ? 'serie' : (badgeTxt.indexOf('anim') !== -1 ? 'anime' : 'filme');
+                            var imgEl = card.querySelector('img');
+                            var poster = imgEl ? (imgEl.currentSrc || imgEl.src || '') : '';
                             if (t && !isGenericTitle(t)) {
                                 var cleanT = t.trim();
                                 window.__currentMovieTitle = cleanT;
+                                window.__activeMovieMeta = {
+                                    tmdb_id: tmdbId,
+                                    title: cleanT,
+                                    kind: kind,
+                                    poster: poster,
+                                    backdrop: ''
+                                };
                                 if (window.AndroidBridge && window.AndroidBridge.onMovieSelected) {
                                     window.AndroidBridge.onMovieSelected(cleanT);
                                 }
+                                queryAndReportSavedProgress(cleanT, tmdbId);
                             }
                             return;
                         }
@@ -973,7 +1080,9 @@ object InjectedJs {
                             }
                             window.__isUserInMovie = true;
                             window.__isUserInCatalog = false;
-                            var savedSec = getSavedProgressForTitle(window.__currentMovieTitle);
+                            var id = window.__activeMovieMeta ? window.__activeMovieMeta.tmdb_id : '';
+                            queryAndReportSavedProgress(window.__currentMovieTitle, id);
+                            var savedSec = getBestSavedProgress(window.__currentMovieTitle, id);
                             if (window.AndroidBridge && window.AndroidBridge.onAssistirClicked) {
                                 try {
                                     window.AndroidBridge.onAssistirClicked(window.__currentMovieTitle || '', savedSec);
@@ -1216,6 +1325,49 @@ object InjectedJs {
                 scanAllVideos();
                 setInterval(scanAllVideos, 2500);
                 window.__scanVideos = scanAllVideos;
+
+                // Sync catalog "Continuar assistindo" items from Supabase and bvd:progresso to native player DB
+                function syncCatalogProgressToAndroid() {
+                    try {
+                        if (!window.AndroidBridge) return;
+                        var raw = localStorage.getItem('bvd:progresso');
+                        if (raw) {
+                            var map = JSON.parse(raw);
+                            for (var k in map) {
+                                var item = map[k];
+                                if (item && (item.titulo || item.title) && item.segundo && item.segundo > 10) {
+                                    var titleName = (item.titulo || item.title || '').trim();
+                                    if (window.AndroidBridge.onSyncLocalProgress) {
+                                        window.AndroidBridge.onSyncLocalProgress(titleName, Math.round(item.segundo), Math.round(item.duracao || 0));
+                                    }
+                                }
+                            }
+                        }
+                        if (window.bvdAuth && window.bvdAuth.cliente && window.bvdAuth.usuarioAtual) {
+                            var usuario = window.bvdAuth.usuarioAtual();
+                            if (usuario && usuario.id) {
+                                window.bvdAuth.cliente.from('progresso')
+                                    .select('titulo, segundo, duracao, tmdb_id, kind')
+                                    .order('visto_em', { ascending: false })
+                                    .limit(20)
+                                    .then(function(res) {
+                                        if (res && res.data && res.data.length > 0) {
+                                            res.data.forEach(function(row) {
+                                                if (row.titulo && row.segundo && row.segundo > 10) {
+                                                    var tName = row.titulo.trim();
+                                                    if (window.AndroidBridge.onSyncLocalProgress) {
+                                                        window.AndroidBridge.onSyncLocalProgress(tName, Math.round(row.segundo), Math.round(row.duracao || 0));
+                                                    }
+                                                }
+                                            });
+                                        }
+                                    }).catch(function(err){});
+                            }
+                        }
+                    } catch(e) {}
+                }
+                setInterval(syncCatalogProgressToAndroid, 6000);
+                setTimeout(syncCatalogProgressToAndroid, 1500);
             } catch(globalErr) {}
         })();
         """.trimIndent()
