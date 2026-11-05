@@ -130,6 +130,23 @@ object InjectedJs {
                             }
                         } catch(e) {}
 
+                        var isBlocked = false;
+                        try {
+                            if (window.AndroidBridge && typeof window.AndroidBridge.isMandatoryBlocked === 'function') {
+                                isBlocked = window.AndroidBridge.isMandatoryBlocked();
+                            }
+                        } catch(e) {}
+
+                        if (isBlocked) {
+                            try {
+                                var media = document.querySelectorAll('video, audio');
+                                for (var m = 0; m < media.length; m++) {
+                                    media[m].pause();
+                                    media[m].src = '';
+                                }
+                            } catch(e) {}
+                        }
+
                         function esconderFaixa() {
                             var faixa = document.getElementById('apk-faixa');
                             if (faixa) {

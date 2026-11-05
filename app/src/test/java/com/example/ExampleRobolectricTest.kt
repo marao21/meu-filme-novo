@@ -127,4 +127,39 @@ class ExampleRobolectricTest {
     com.example.update.BaixarAtualizacao.markUpdateAsDone(context)
     assertTrue(com.example.update.BaixarAtualizacao.isAppAlreadyUpdated(context))
   }
+
+  @Test
+  fun `mandatory update policy blocks access after 2 updates behind`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val currentCode = com.example.BuildConfig.VERSION_CODE // 20
+
+    // 0 updates behind: fully up to date -> NOT blocked
+    com.example.update.BaixarAtualizacao.setSimulatedRemoteVersion(context, currentCode, "2.9")
+    val vInfo0 = com.example.update.BaixarAtualizacao.versionInfo.value
+    assertFalse(vInfo0.isMandatoryBlock)
+    assertFalse(com.example.update.BaixarAtualizacao.isMandatoryBlocked(context))
+    assertEquals(0, vInfo0.updatesBehind)
+
+    // 1 update behind (e.g. v2.9 code 20 vs remote v3.0 code 21): within 2 updates tolerance -> NOT blocked
+    com.example.update.BaixarAtualizacao.setSimulatedRemoteVersion(context, currentCode + 1, "3.0")
+    val vInfo1 = com.example.update.BaixarAtualizacao.versionInfo.value
+    assertFalse(vInfo1.isMandatoryBlock)
+    assertFalse(com.example.update.BaixarAtualizacao.isMandatoryBlocked(context))
+    assertTrue(vInfo1.isUpdateAvailable)
+    assertEquals(1, vInfo1.updatesBehind)
+
+    // 2 updates behind (e.g. code 20 vs remote code 22): 2 updates reached -> BLOCKED ("não deixa acessar nada")
+    com.example.update.BaixarAtualizacao.setSimulatedRemoteVersion(context, currentCode + 2, "3.1")
+    val vInfo2 = com.example.update.BaixarAtualizacao.versionInfo.value
+    assertTrue(vInfo2.isMandatoryBlock)
+    assertTrue(com.example.update.BaixarAtualizacao.isMandatoryBlocked(context))
+    assertEquals(2, vInfo2.updatesBehind)
+
+    // 3+ updates behind (e.g. code 20 vs remote code 25): BLOCKED
+    com.example.update.BaixarAtualizacao.setSimulatedRemoteVersion(context, currentCode + 5, "3.4")
+    val vInfo5 = com.example.update.BaixarAtualizacao.versionInfo.value
+    assertTrue(vInfo5.isMandatoryBlock)
+    assertTrue(com.example.update.BaixarAtualizacao.isMandatoryBlocked(context))
+    assertEquals(5, vInfo5.updatesBehind)
+  }
 }

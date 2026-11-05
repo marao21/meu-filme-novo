@@ -751,6 +751,11 @@ fun BrowserScreen(
                                 }
 
                                 @JavascriptInterface
+                                fun isMandatoryBlocked(): Boolean {
+                                    return BaixarAtualizacao.isMandatoryBlocked(ctx)
+                                }
+
+                                @JavascriptInterface
                                 fun onNavigatedToCatalog() {
                                     playerViewModel.stopPlayback()
                                     isUserInMovie = false

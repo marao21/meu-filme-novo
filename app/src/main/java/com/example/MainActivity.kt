@@ -25,6 +25,7 @@ class MainActivity : ComponentActivity() {
         window.decorView.requestFocus()
 
         enableEdgeToEdge()
+        com.example.update.BaixarAtualizacao.verificarVersao(this)
         setContent {
             MyApplicationTheme {
                 MainScreen(playerViewModel = playerViewModel)
@@ -34,6 +35,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        com.example.update.BaixarAtualizacao.verificarVersao(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.decorView.keepScreenOn = true
         window.decorView.requestFocus()
