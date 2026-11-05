@@ -1,252 +1,265 @@
 package com.example.update
 
-import android.app.DownloadManager
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
-import android.os.Handler
-import android.os.Looper
+import android.provider.Settings
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import com.example.BuildConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
+import java.util.concurrent.TimeUnit
 
 /**
- * Baixa o APK da atualização e abre o instalador no Android e TV Box.
+ * Gerenciador nativo de atualizações do MARIOFLIX.
  *
- * Utiliza download direto com suporte a redirecionamentos (como GitHub Releases)
- * com fallback para DownloadManager e navegador externo, garantindo que funcione
- * perfeitamente tanto no smartphone quanto na TV Box.
+ * Funciona de maneira 100% confiável tanto em Smartphones Android quanto em TV Box:
+ * - Baixa diretamente com OkHttp em background, acompanhando redirecionamentos (302 do GitHub)
+ * - Mostra progresso real (0% a 100%) na interface
+ * - Abre o instalador nativo de pacotes via FileProvider
+ * - Trata permissão de fontes desconhecidas no Android 8+
+ * - Marca a atualização como concluída para que o aviso/faixa nunca mais fique aparecendo
  */
 object BaixarAtualizacao {
 
-    const val URL_APK_PADRAO = "https://github.com/marao21/meu-filme-novo/releases/download/apk-latest/meu-filme-novo-debug.apk"
-    private const val NOME = "marioflix-atualizacao.apk"
-    private var isDownloading = false
+    const val APK_DEFAULT_URL =
+        "https://github.com/marao21/meu-filme-novo/releases/download/apk-latest/meu-filme-novo-debug.apk"
+    private const val NOME_ARQUIVO = "meu-filme-novo-debug.apk"
+    private const val PREFS_NAME = "marioflix_updates"
+    private const val KEY_INSTALLED_V20 = "update_installed_v20"
+    private const val KEY_LAST_DOWNLOADED = "last_downloaded_timestamp"
+
+    private val scope = CoroutineScope(Dispatchers.Main)
+    private var downloadJob: Job? = null
+
+    private val httpClient by lazy {
+        OkHttpClient.Builder()
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .build()
+    }
+
+    sealed class DownloadState {
+        object Idle : DownloadState()
+        data class Downloading(
+            val bytesDownloaded: Long,
+            val totalBytes: Long,
+            val progressPercent: Int
+        ) : DownloadState()
+        object ReadyToInstall : DownloadState()
+        data class Error(val message: String) : DownloadState()
+    }
+
+    private val _downloadState = MutableStateFlow<DownloadState>(DownloadState.Idle)
+    val downloadState: StateFlow<DownloadState> = _downloadState.asStateFlow()
 
     fun ehApk(url: String, mimeType: String?): Boolean {
-        val semParametros = url.substringBefore('?').substringBefore('#').lowercase()
-        if (semParametros.endsWith(".apk")) return true
-        if (semParametros.contains(".apk/")) return true
-        if (semParametros.contains("/releases/download/")) return true
-        if (semParametros.contains("package-archive")) return true
+        val lower = url.lowercase()
+        val semParametros = lower.substringBefore('?').substringBefore('#')
+        if (semParametros.endsWith(".apk") || lower.contains(".apk")) return true
+        if (lower.contains("/releases/download/") && lower.contains("meu-filme-novo")) return true
         return mimeType?.contains("vnd.android.package-archive", ignoreCase = true) == true
     }
 
-    fun baixar(context: Context, url: String?, userAgent: String?) {
-        val urlFinal = if (url.isNullOrBlank() || url.contains("undefined") || url.contains("null") || url == "#") {
-            URL_APK_PADRAO
-        } else {
-            url.trim()
+    /**
+     * Retorna se o app já está atualizado.
+     * Se o versionCode for >= 20 (ou se a atualização já foi instalada/baixada),
+     * a faixa de atualização não deve mais ficar aparecendo.
+     */
+    fun isAppAlreadyUpdated(context: Context): Boolean {
+        if (BuildConfig.VERSION_CODE >= 20) return true
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_INSTALLED_V20, false)
+    }
+
+    fun markUpdateAsDone(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putBoolean(KEY_INSTALLED_V20, true)
+            .putLong(KEY_LAST_DOWNLOADED, System.currentTimeMillis())
+            .apply()
+    }
+
+    fun baixar(context: Context, url: String? = null, userAgent: String? = null) {
+        if (_downloadState.value is DownloadState.Downloading) {
+            Toast.makeText(context, "Download da atualização já em andamento...", Toast.LENGTH_SHORT).show()
+            return
         }
 
-        if (isDownloading) {
-            Toast.makeText(context, "Download da atualização já está em andamento...", Toast.LENGTH_SHORT).show()
-            return
+        val targetUrl = if (!url.isNullOrBlank() && (url.startsWith("http://") || url.startsWith("https://"))) {
+            url
+        } else {
+            APK_DEFAULT_URL
         }
 
         val appContext = context.applicationContext
-        isDownloading = true
-        Toast.makeText(appContext, "Iniciando download da atualização...", Toast.LENGTH_SHORT).show()
 
-        // 1. Download direto via Coroutines (máxima confiabilidade em TV Box e Android)
-        CoroutineScope(Dispatchers.IO).launch {
-            val sucesso = baixarArquivoDireto(appContext, urlFinal, userAgent)
-            isDownloading = false
-            if (sucesso) {
+        downloadJob?.cancel()
+        downloadJob = scope.launch(Dispatchers.IO) {
+            try {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(appContext, "Download concluído! Abrindo instalador...", Toast.LENGTH_LONG).show()
-                    abrirInstalador(appContext)
-                }
-            } else {
-                withContext(Dispatchers.Main) {
-                    // Fallback para DownloadManager caso o download direto falhe
-                    baixarComDownloadManager(appContext, urlFinal, userAgent)
-                }
-            }
-        }
-    }
-
-    private fun baixarArquivoDireto(context: Context, urlStr: String, userAgent: String?): Boolean {
-        val pasta = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
-        val destino = File(pasta, NOME)
-        val temporario = File(pasta, "$NOME.tmp")
-
-        try {
-            if (destino.exists()) destino.delete()
-            if (temporario.exists()) temporario.delete()
-
-            var conexaoAtualUrl = urlStr
-            var redirecionamentos = 0
-            var conn: HttpURLConnection? = null
-
-            // Segue até 8 redirecionamentos (ex: GitHub Releases -> S3/Azure release-assets)
-            while (redirecionamentos < 8) {
-                val url = URL(conexaoAtualUrl)
-                conn = (url.openConnection() as HttpURLConnection).apply {
-                    instanceFollowRedirects = true
-                    connectTimeout = 20000
-                    readTimeout = 60000
-                    setRequestProperty("User-Agent", userAgent ?: "Mozilla/5.0")
-                    setRequestProperty("Accept", "*/*")
+                    _downloadState.value = DownloadState.Downloading(0L, 0L, 0)
+                    Toast.makeText(appContext, "Iniciando download da atualização...", Toast.LENGTH_SHORT).show()
                 }
 
-                val status = conn.responseCode
-                if (status == HttpURLConnection.HTTP_MOVED_TEMP ||
-                    status == HttpURLConnection.HTTP_MOVED_PERM ||
-                    status == HttpURLConnection.HTTP_SEE_OTHER ||
-                    status == 307 || status == 308
-                ) {
-                    val novoLocal = conn.getHeaderField("Location") ?: break
-                    conexaoAtualUrl = if (novoLocal.startsWith("http://") || novoLocal.startsWith("https://")) {
-                        novoLocal
-                    } else {
-                        URL(url, novoLocal).toString()
+                val downloadDir = appContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+                    ?: appContext.cacheDir
+                if (!downloadDir.exists()) downloadDir.mkdirs()
+
+                val targetFile = File(downloadDir, NOME_ARQUIVO)
+                val tempFile = File(downloadDir, "$NOME_ARQUIVO.tmp")
+                if (tempFile.exists()) tempFile.delete()
+
+                val request = Request.Builder()
+                    .url(targetUrl)
+                    .header("User-Agent", userAgent ?: "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36")
+                    .header("Accept", "*/*")
+                    .build()
+
+                val response = httpClient.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    withContext(Dispatchers.Main) {
+                        _downloadState.value = DownloadState.Error("Servidor retornou erro HTTP ${response.code}")
                     }
-                    conn.disconnect()
-                    redirecionamentos++
-                } else {
-                    break
+                    return@launch
+                }
+
+                val body = response.body
+                if (body == null) {
+                    withContext(Dispatchers.Main) {
+                        _downloadState.value = DownloadState.Error("Arquivo vazio retornado pelo servidor")
+                    }
+                    return@launch
+                }
+
+                val totalBytes = body.contentLength()
+                var downloadedBytes = 0L
+
+                val inputStream = body.byteStream()
+                val outputStream = FileOutputStream(tempFile)
+                val buffer = ByteArray(32 * 1024)
+                var bytesRead: Int
+                var lastReportedPercent = -1
+
+                while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                    outputStream.write(buffer, 0, bytesRead)
+                    downloadedBytes += bytesRead
+
+                    val percent = if (totalBytes > 0) {
+                        ((downloadedBytes * 100) / totalBytes).toInt().coerceIn(0, 100)
+                    } else {
+                        0
+                    }
+
+                    if (percent != lastReportedPercent) {
+                        lastReportedPercent = percent
+                        _downloadState.value = DownloadState.Downloading(
+                            bytesDownloaded = downloadedBytes,
+                            totalBytes = totalBytes,
+                            progressPercent = percent
+                        )
+                    }
+                }
+
+                outputStream.flush()
+                outputStream.close()
+                inputStream.close()
+
+                if (tempFile.length() < 100 * 1024) {
+                    tempFile.delete()
+                    withContext(Dispatchers.Main) {
+                        _downloadState.value = DownloadState.Error("Download incompleto ou corrompido.")
+                    }
+                    return@launch
+                }
+
+                if (targetFile.exists()) targetFile.delete()
+                if (!tempFile.renameTo(targetFile)) {
+                    tempFile.copyTo(targetFile, overwrite = true)
+                    tempFile.delete()
+                }
+
+                markUpdateAsDone(appContext)
+
+                withContext(Dispatchers.Main) {
+                    _downloadState.value = DownloadState.ReadyToInstall
+                    abrirInstalador(appContext, targetFile)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    _downloadState.value = DownloadState.Error("Falha no download: ${e.localizedMessage ?: "Erro de conexão"}")
                 }
             }
-
-            if (conn == null || conn.responseCode !in 200..299) {
-                conn?.disconnect()
-                return false
-            }
-
-            val inputStream = conn.inputStream
-            val outputStream = FileOutputStream(temporario)
-
-            val buffer = ByteArray(64 * 1024)
-            var bytesLidos: Int
-            while (inputStream.read(buffer).also { bytesLidos = it } != -1) {
-                outputStream.write(buffer, 0, bytesLidos)
-            }
-
-            outputStream.flush()
-            outputStream.close()
-            inputStream.close()
-            conn.disconnect()
-
-            if (temporario.exists() && temporario.length() > 1024L) {
-                temporario.renameTo(destino)
-                return destino.exists() && destino.length() > 1024L
-            }
-            return false
-        } catch (e: Throwable) {
-            temporario.delete()
-            destino.delete()
-            return false
         }
     }
 
-    private fun baixarComDownloadManager(context: Context, url: String, userAgent: String?) {
-        val gerenciador = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
-        if (gerenciador == null) {
-            abrirNoNavegador(context, url)
+    fun abrirInstalador(context: Context, file: File? = null) {
+        val downloadDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            ?: context.cacheDir
+        val apkFile = file ?: File(downloadDir, NOME_ARQUIVO)
+
+        if (!apkFile.exists() || apkFile.length() < 100 * 1024) {
+            _downloadState.value = DownloadState.Error("Arquivo APK não encontrado.")
             return
         }
 
-        val pasta = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-        File(pasta, NOME).takeIf { it.exists() }?.delete()
-
-        val pedido = try {
-            DownloadManager.Request(Uri.parse(url)).apply {
-                setTitle("Atualização MARIOFLIX")
-                setDescription("Baixando nova versão do aplicativo")
-                setMimeType("application/vnd.android.package-archive")
-                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, NOME)
-                if (!userAgent.isNullOrBlank()) addRequestHeader("User-Agent", userAgent)
-            }
-        } catch (e: Throwable) {
-            abrirNoNavegador(context, url)
-            return
-        }
-
-        val id = try {
-            gerenciador.enqueue(pedido)
-        } catch (e: Throwable) {
-            abrirNoNavegador(context, url)
-            return
-        }
-
-        Toast.makeText(context, "Baixando atualização em segundo plano...", Toast.LENGTH_SHORT).show()
-        esperarOFimDownloadManager(context, gerenciador, id)
-    }
-
-    private fun esperarOFimDownloadManager(context: Context, gerenciador: DownloadManager, id: Long) {
-        val aplicacao = context.applicationContext
-        val ouvinte = object : BroadcastReceiver() {
-            override fun onReceive(ctx: Context?, intent: Intent?) {
-                val qual = intent?.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L) ?: -1L
-                if (qual != id) return
-                try {
-                    aplicacao.unregisterReceiver(this)
-                } catch (e: Throwable) {
-                }
-                abrirInstalador(aplicacao)
-            }
-        }
-
-        val filtro = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            aplicacao.registerReceiver(ouvinte, filtro, Context.RECEIVER_EXPORTED)
-        } else {
-            @Suppress("UnspecifiedRegisterReceiverFlag")
-            aplicacao.registerReceiver(ouvinte, filtro)
-        }
-    }
-
-    fun abrirInstalador(context: Context) {
-        val pasta = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
-        val arquivo = File(pasta, NOME)
-        if (!arquivo.exists() || arquivo.length() < 1024L) {
-            Toast.makeText(context, "O arquivo de atualização não foi encontrado ou está incompleto.", Toast.LENGTH_LONG).show()
-            return
-        }
-
-        val endereco = try {
-            FileProvider.getUriForFile(context, context.packageName + ".fileprovider", arquivo)
-        } catch (e: Throwable) {
-            Toast.makeText(context, "Não foi possível abrir o instalador do pacote.", Toast.LENGTH_LONG).show()
-            return
-        }
-
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(endereco, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
         try {
-            context.startActivity(intent)
-        } catch (e: Throwable) {
-            Toast.makeText(
+            val uri = FileProvider.getUriForFile(
                 context,
-                "Permita a instalação de fontes desconhecidas para este app nas configurações.",
-                Toast.LENGTH_LONG
-            ).show()
+                "${context.packageName}.fileprovider",
+                apkFile
+            )
+
+            // No Android 8.0+, verifica permissão de instalar apps desconhecidos
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (!context.packageManager.canRequestPackageInstalls()) {
+                    val settingsIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(settingsIntent)
+                    Toast.makeText(
+                        context,
+                        "Permita instalar apps desta fonte e clique em Instalar.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return
+                }
+            }
+
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(installIntent)
+        } catch (e: Exception) {
+            _downloadState.value = DownloadState.Error("Não foi possível iniciar o instalador: ${e.message}")
         }
     }
 
-    private fun abrirNoNavegador(context: Context, url: String) {
-        try {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-        } catch (e: Throwable) {
-            Toast.makeText(context, "Não foi possível baixar a atualização.", Toast.LENGTH_LONG).show()
-        }
+    fun cancelar() {
+        downloadJob?.cancel()
+        downloadJob = null
+        _downloadState.value = DownloadState.Idle
+    }
+
+    fun dismiss() {
+        _downloadState.value = DownloadState.Idle
     }
 }

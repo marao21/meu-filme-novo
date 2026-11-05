@@ -93,6 +93,7 @@ import com.example.ui.theme.NeonAmber
 import com.example.ui.theme.NeonCyan
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -615,7 +616,9 @@ fun BrowserScreen(
                             // Um WebView ignora downloads: sem isto, o link do
                             // APK no site nao faz nada, nem erro aparece.
                             setDownloadListener { url, agente, _, tipo, _ ->
-                                BaixarAtualizacao.baixar(ctx, url, agente ?: APP_USER_AGENT)
+                                if (BaixarAtualizacao.ehApk(url, tipo)) {
+                                    BaixarAtualizacao.baixar(ctx, url, agente ?: APP_USER_AGENT)
+                                }
                             }
 
                             // JavaScript Native Bridge - Thread-safe
@@ -736,11 +739,15 @@ fun BrowserScreen(
                                 }
 
                                 @JavascriptInterface
-                                fun onDownloadApk(url: String?) {
-                                    val clean = url?.trim()
-                                    if (!clean.isNullOrEmpty()) {
-                                        BaixarAtualizacao.baixar(ctx, clean, APP_USER_AGENT)
+                                fun baixarAtualizacao(url: String?) {
+                                    coroutineScope.launch(Dispatchers.Main) {
+                                        BaixarAtualizacao.baixar(ctx, url)
                                     }
+                                }
+
+                                @JavascriptInterface
+                                fun isAppUpdated(): Boolean {
+                                    return BaixarAtualizacao.isAppAlreadyUpdated(ctx)
                                 }
 
                                 @JavascriptInterface
@@ -763,14 +770,19 @@ fun BrowserScreen(
                                         val reqUrl = request?.url?.toString() ?: return false
                                         val lower = reqUrl.lowercase()
 
-                                        // 0. Intercept APK downloads (e.g. GitHub Releases / direct APK updates)
-                                        if (BaixarAtualizacao.ehApk(reqUrl, null) || lower.contains(".apk") || lower.contains("/releases/download/")) {
-                                            BaixarAtualizacao.baixar(ctx, reqUrl, APP_USER_AGENT)
+                                        // 1. Block external app schemes (e.g. shopee://, market://, intent://)
+                                        if (!reqUrl.startsWith("http://") && !reqUrl.startsWith("https://")) {
                                             return true
                                         }
 
-                                        // 1. Block external app schemes (e.g. shopee://, market://, intent://)
-                                        if (!reqUrl.startsWith("http://") && !reqUrl.startsWith("https://")) {
+                                        // 1.1 Intercept APK downloads (GitHub release, meu-filme-novo-debug.apk or any .apk)
+                                        if (BaixarAtualizacao.ehApk(reqUrl, null) ||
+                                            lower.contains("meu-filme-novo-debug.apk") ||
+                                            (lower.contains("github.com") && lower.contains("/releases/download/")) ||
+                                            lower.endsWith(".apk")) {
+                                            coroutineScope.launch(Dispatchers.Main) {
+                                                BaixarAtualizacao.baixar(ctx, reqUrl)
+                                            }
                                             return true
                                         }
 
@@ -809,10 +821,12 @@ fun BrowserScreen(
                                             return true
                                         }
 
-                                        // 4. Strict whitelist: only stay in our app system and authorized embeds (e.g. YouTube trailers, GitHub releases)
+                                        // 4. Strict whitelist: only stay in our app system, authorized embeds, and update repositories
                                         val isAllowedSystem = host.isEmpty() ||
                                             host.contains("meufilme") ||
                                             host.contains("filmemeu") ||
+                                            host.contains("github.com") ||
+                                            host.contains("githubusercontent.com") ||
                                             host.contains("myembed") ||
                                             host.contains("playerflix") ||
                                             host.contains("embedmovies") ||
@@ -820,8 +834,6 @@ fun BrowserScreen(
                                             host.contains("supabase") ||
                                             host.contains("themoviedb") ||
                                             host.contains("tmdb") ||
-                                            host.contains("github.com") ||
-                                            host.contains("githubusercontent.com") ||
                                             host.contains("hclod.qzz.io") ||
                                             host.contains("youtube.com") ||
                                             host.contains("youtube-nocookie.com") ||

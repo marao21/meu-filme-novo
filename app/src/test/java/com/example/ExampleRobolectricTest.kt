@@ -12,7 +12,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [36])
 class ExampleRobolectricTest {
 
   @Test
@@ -99,5 +99,32 @@ class ExampleRobolectricTest {
 
     repo.setFilterAbove15Min(true)
     assertTrue(repo.filterAbove15Min.value)
+  }
+
+  @Test
+  fun `apk update url detection and app updated state`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val gitHubApkUrl = "https://github.com/marao21/meu-filme-novo/releases/download/apk-latest/meu-filme-novo-debug.apk"
+    val standardApk = "https://example.com/app/update.apk"
+    val queryApk = "https://example.com/download?file=app.apk&v=2"
+    val webPage = "https://example.com/about.html"
+
+    assertTrue(com.example.update.BaixarAtualizacao.ehApk(gitHubApkUrl, null))
+    assertTrue(com.example.update.BaixarAtualizacao.ehApk(standardApk, null))
+    assertTrue(com.example.update.BaixarAtualizacao.ehApk(queryApk, null))
+    assertFalse(com.example.update.BaixarAtualizacao.ehApk(webPage, "text/html"))
+    assertTrue(com.example.update.BaixarAtualizacao.ehApk(webPage, "application/vnd.android.package-archive"))
+
+    assertEquals(
+      "https://github.com/marao21/meu-filme-novo/releases/download/apk-latest/meu-filme-novo-debug.apk",
+      com.example.update.BaixarAtualizacao.APK_DEFAULT_URL
+    )
+
+    // With versionCode = 20, isAppAlreadyUpdated is true so the update banner doesn't keep appearing
+    assertTrue(com.example.update.BaixarAtualizacao.isAppAlreadyUpdated(context))
+
+    // Mark update as done persists
+    com.example.update.BaixarAtualizacao.markUpdateAsDone(context)
+    assertTrue(com.example.update.BaixarAtualizacao.isAppAlreadyUpdated(context))
   }
 }

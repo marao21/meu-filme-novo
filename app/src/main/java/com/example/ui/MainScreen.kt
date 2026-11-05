@@ -14,19 +14,24 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import com.example.player.PlayerViewModel
 import com.example.ui.screens.BrowserScreen
 import com.example.ui.screens.DetectedStreamsDialog
 import com.example.ui.screens.PlayerScreen
+import com.example.ui.screens.UpdateProgressDialog
 import com.example.ui.theme.CinemaBlack
+import com.example.update.BaixarAtualizacao
 
 @Composable
 fun MainScreen(
     playerViewModel: PlayerViewModel,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val repository = playerViewModel.repository
     val playerState by playerViewModel.playerState.collectAsState()
+    val updateState by BaixarAtualizacao.downloadState.collectAsState()
     var showStreamsDialog by remember { mutableStateOf(false) }
 
     val isPlayerActive = playerState.currentStream != null
@@ -83,6 +88,17 @@ fun MainScreen(
                     playerViewModel.playStream(stream)
                 },
                 onDismiss = { showStreamsDialog = false }
+            )
+        }
+
+        // Native In-App Update Dialog (Smartphone & TV Box)
+        if (updateState !is BaixarAtualizacao.DownloadState.Idle) {
+            UpdateProgressDialog(
+                state = updateState,
+                onDismiss = { BaixarAtualizacao.dismiss() },
+                onCancel = { BaixarAtualizacao.cancelar() },
+                onInstall = { BaixarAtualizacao.abrirInstalador(context) },
+                onRetry = { BaixarAtualizacao.baixar(context) }
             )
         }
     }
