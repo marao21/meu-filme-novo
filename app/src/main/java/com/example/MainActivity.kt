@@ -25,7 +25,6 @@ class MainActivity : ComponentActivity() {
         window.decorView.requestFocus()
 
         enableEdgeToEdge()
-        com.example.update.BaixarAtualizacao.verificarVersao(this)
         setContent {
             MyApplicationTheme {
                 MainScreen(playerViewModel = playerViewModel)
@@ -35,7 +34,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        com.example.update.BaixarAtualizacao.verificarVersao(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.decorView.keepScreenOn = true
         window.decorView.requestFocus()
@@ -153,23 +151,23 @@ class MainActivity : ComponentActivity() {
                     KeyEvent.KEYCODE_BUTTON_A,
                     KeyEvent.KEYCODE_BUTTON_SELECT -> {
                         playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.DPAD_CENTER)
-                        return playerViewModel.isMouseModeEnabled.value
+                        return false
                     }
                     KeyEvent.KEYCODE_DPAD_UP -> {
                         playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.DPAD_UP)
-                        return playerViewModel.isMouseModeEnabled.value
+                        return false
                     }
                     KeyEvent.KEYCODE_DPAD_DOWN -> {
                         playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.DPAD_DOWN)
-                        return playerViewModel.isMouseModeEnabled.value
+                        return false
                     }
                     KeyEvent.KEYCODE_DPAD_LEFT -> {
                         playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.DPAD_LEFT)
-                        return playerViewModel.isMouseModeEnabled.value
+                        return false
                     }
                     KeyEvent.KEYCODE_DPAD_RIGHT -> {
                         playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.DPAD_RIGHT)
-                        return playerViewModel.isMouseModeEnabled.value
+                        return false
                     }
                     KeyEvent.KEYCODE_BACK,
                     KeyEvent.KEYCODE_ESCAPE,
@@ -188,21 +186,24 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        val isBackKey = event.keyCode == KeyEvent.KEYCODE_BACK ||
-            event.keyCode == KeyEvent.KEYCODE_ESCAPE ||
-            event.keyCode == KeyEvent.KEYCODE_BUTTON_B
-
-        if (isBackKey) {
-            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                handleRemoteKeyEvent(event.keyCode, true)
-            }
-            return true
-        }
-
         if (handleRemoteKeyEvent(event.keyCode, event.action == KeyEvent.ACTION_DOWN)) {
             return true
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (handleRemoteKeyEvent(keyCode, true)) {
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        if (handleRemoteKeyEvent(keyCode, false)) {
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
     }
 
     override fun onPause() {

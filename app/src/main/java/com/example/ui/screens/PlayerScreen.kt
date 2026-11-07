@@ -35,7 +35,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -179,7 +178,6 @@ fun PlayerScreen(
     val state by viewModel.playerState.collectAsState()
 
     var showControls by remember { mutableStateOf(true) }
-    var showQualityDialog by remember { mutableStateOf(false) }
     var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var isSeeking by remember { mutableStateOf(false) }
     var seekProgress by remember { mutableFloatStateOf(0f) }
@@ -189,8 +187,8 @@ fun PlayerScreen(
     }
 
     // Auto-hide controls after 8 seconds of inactivity when playing (kept longer per user request)
-    LaunchedEffect(showControls, state.isPlaying, lastInteractionTime, showQualityDialog) {
-        if (showControls && state.isPlaying && !state.isLocked && !showQualityDialog) {
+    LaunchedEffect(showControls, state.isPlaying, lastInteractionTime) {
+        if (showControls && state.isPlaying && !state.isLocked) {
             delay(8000)
             showControls = false
         }
@@ -396,42 +394,6 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Automatic Quality Adaptation Notification Banner (YouTube style)
-        AnimatedVisibility(
-            visible = state.autoQualityNotice != null,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 28.dp)
-        ) {
-            Surface(
-                color = CinemaDark.copy(alpha = 0.94f),
-                shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, NeonCyan.copy(alpha = 0.8f)),
-                shadowElevation = 8.dp
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Speed,
-                        contentDescription = null,
-                        tint = NeonCyan,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = state.autoQualityNotice ?: "",
-                        color = TextPrimary,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-        }
-
         // Loading spinner
         if (state.isLoading) {
             CircularProgressIndicator(
@@ -565,101 +527,18 @@ fun PlayerScreen(
                         )
                         .padding(horizontal = 24.dp, vertical = 20.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = stream.title.ifEmpty { "Filme" },
-                            color = SystemText,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 26.sp,
-                            letterSpacing = (-0.5).sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
+                    // Big Prominent Movie / Series Title (Clean Cinema style)
+                    Text(
+                        text = stream.title.ifEmpty { "Filme" },
+                        color = SystemText,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 32.sp,
+                        letterSpacing = (-0.5).sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
 
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Botão de Seleção de Qualidade (estilo YouTube: AUTO / 1080p / 720p / 480p / 360p)
-                            TVPlayerFocusButton(
-                                onClick = {
-                                    showQualityDialog = true
-                                    resetControlsTimer()
-                                },
-                                shape = RoundedCornerShape(10.dp),
-                                containerColor = SystemBgSoft.copy(alpha = 0.85f),
-                                contentColor = SystemText,
-                                focusBorderColor = SystemAccent,
-                                modifier = Modifier.height(38.dp),
-                                testTag = "player_btn_quality"
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 6.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Speed,
-                                        contentDescription = "Qualidade de Vídeo",
-                                        tint = SystemAccent,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = state.currentQualityLabel,
-                                        color = SystemText,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-
-                            // Botão de Alternar Formato de Tela (FIT, FILL, ZOOM)
-                            TVPlayerFocusButton(
-                                onClick = {
-                                    viewModel.cycleResizeMode()
-                                    resetControlsTimer()
-                                },
-                                shape = RoundedCornerShape(10.dp),
-                                containerColor = SystemBgSoft.copy(alpha = 0.85f),
-                                contentColor = SystemText,
-                                focusBorderColor = SystemAccent,
-                                modifier = Modifier.height(38.dp),
-                                testTag = "player_btn_aspect_ratio"
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 6.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.AspectRatio,
-                                        contentDescription = "Formato de Tela",
-                                        tint = SystemAccent,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = when (state.resizeMode) {
-                                            1 -> "FILL"
-                                            2 -> "ZOOM"
-                                            else -> "FIT"
-                                        },
-                                        color = SystemMuted,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     // Sleek Modern Timeline
                     var isSliderFocused by remember { mutableStateOf(false) }
@@ -732,147 +611,6 @@ fun PlayerScreen(
             }
         }
 
-        if (showQualityDialog) {
-            QualitySelectionDialog(
-                currentPreference = state.selectedQualityPreference,
-                currentLabel = state.currentQualityLabel,
-                availableQualities = state.availableQualities,
-                onSelectQuality = { quality: String ->
-                    viewModel.setQualityPreference(quality)
-                },
-                onDismiss = {
-                    showQualityDialog = false
-                    resetControlsTimer()
-                }
-            )
-        }
-    }
-}
-
-@Composable
-fun QualitySelectionDialog(
-    currentPreference: String,
-    currentLabel: String,
-    availableQualities: List<String>,
-    onSelectQuality: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val options = remember(availableQualities) {
-        val list = mutableListOf("AUTO")
-        val tiers = listOf("1080p", "720p", "480p", "360p", "320p", "240p")
-        for (q in availableQualities) {
-            val clean = q.substringBefore(" (").trim()
-            if (clean.isNotEmpty() && !list.contains(clean)) {
-                list.add(clean)
-            }
-        }
-        for (tier in tiers) {
-            if (!list.contains(tier)) {
-                list.add(tier)
-            }
-        }
-        list
-    }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = CinemaSurface,
-            border = BorderStroke(1.dp, SystemLineSoft),
-            modifier = Modifier
-                .widthIn(min = 300.dp, max = 420.dp)
-                .padding(8.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Speed,
-                        contentDescription = null,
-                        tint = SystemAccent,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = "Qualidade do Vídeo",
-                        color = SystemText,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Text(
-                    text = "A qualidade automática (modo YouTube) reduz a resolução se a internet estiver fraca e melhora quando a conexão restabelecer.",
-                    color = SystemMuted,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    options.forEach { option ->
-                        val isSelected = (option == currentPreference) ||
-                            (option == "AUTO" && (currentPreference == "AUTO" || currentPreference.startsWith("AUTO")))
-                        val description = when (option) {
-                            "AUTO" -> "Automática (Recomendada · $currentLabel)"
-                            "1080p" -> "1080p (Full HD)"
-                            "720p" -> "720p (HD)"
-                            "480p" -> "480p (SD · Conexão Moderada)"
-                            "360p" -> "360p (Econômico · Internet Lenta)"
-                            "320p" -> "320p (Ultra Baixo · Internet Fraca)"
-                            else -> option
-                        }
-
-                        TVPlayerFocusButton(
-                            onClick = {
-                                onSelectQuality(option)
-                                onDismiss()
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            containerColor = if (isSelected) SystemAccent.copy(alpha = 0.15f) else SystemBgSoft,
-                            focusBorderColor = SystemAccent,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(46.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = description,
-                                    color = if (isSelected) SystemAccent else SystemText,
-                                    fontSize = 13.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                )
-                                if (isSelected) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = "Selecionado",
-                                        tint = SystemAccent,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 

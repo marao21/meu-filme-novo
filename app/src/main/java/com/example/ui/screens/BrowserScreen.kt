@@ -6,9 +6,6 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Message
-import android.os.SystemClock
-import android.view.InputDevice
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
@@ -25,13 +22,10 @@ import java.io.ByteArrayInputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.Charset
-import kotlin.math.roundToInt
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -43,9 +37,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -54,13 +45,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Movie
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.offset
-import androidx.compose.material.icons.filled.NearMe
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VpnKey
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -106,7 +93,6 @@ import com.example.ui.theme.NeonAmber
 import com.example.ui.theme.NeonCyan
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -148,140 +134,6 @@ fun BrowserScreen(
     var activeMovieTitle by remember { mutableStateOf<String?>(null) }
     var latestBannerStream by remember { mutableStateOf<StreamMedia?>(null) }
     var userRequestedWatch by remember { mutableStateOf(false) }
-
-    // Native TV Box On-Screen Search Keyboard
-    var showTvSearchKeyboard by remember { mutableStateOf(false) }
-    var tvSearchQuery by remember { mutableStateOf("") }
-
-    // Virtual Mouse for TV Box Remote Control
-    var isMouseModeActive by remember { mutableStateOf(false) }
-    var cursorX by remember { mutableFloatStateOf(640f) }
-    var cursorY by remember { mutableFloatStateOf(360f) }
-    var isClicking by remember { mutableStateOf(false) }
-    var mouseHudMessage by remember { mutableStateOf<String?>(null) }
-
-    val vmMouseMode by playerViewModel.isMouseModeEnabled.collectAsState()
-    LaunchedEffect(vmMouseMode) {
-        if (isMouseModeActive != vmMouseMode) {
-            isMouseModeActive = vmMouseMode
-        }
-    }
-
-    LaunchedEffect(isUserInMovie) {
-        if (isUserInMovie) {
-            isMouseModeActive = true
-            playerViewModel.setMouseModeEnabled(true)
-            mouseHudMessage = "Modo Mouse ATIVADO: Use as setas do controle para mover e OK para clicar"
-            coroutineScope.launch {
-                kotlinx.coroutines.delay(3500)
-                if (mouseHudMessage?.startsWith("Modo Mouse") == true) {
-                    mouseHudMessage = null
-                }
-            }
-        }
-    }
-
-    val dispatchHoverAt: (Float, Float) -> Unit = { x, y ->
-        webViewInstance?.let { wv ->
-            try {
-                val downTime = SystemClock.uptimeMillis()
-                val event = MotionEvent.obtain(
-                    downTime,
-                    downTime,
-                    MotionEvent.ACTION_HOVER_MOVE,
-                    1,
-                    arrayOf(MotionEvent.PointerProperties().apply {
-                        id = 0
-                        toolType = MotionEvent.TOOL_TYPE_MOUSE
-                    }),
-                    arrayOf(MotionEvent.PointerCoords().apply {
-                        this.x = x
-                        this.y = y
-                        pressure = 1f
-                        size = 1f
-                    }),
-                    0,
-                    0,
-                    1f,
-                    1f,
-                    0,
-                    0,
-                    InputDevice.SOURCE_MOUSE,
-                    0
-                )
-                wv.dispatchGenericMotionEvent(event)
-                event.recycle()
-            } catch (e: Exception) {}
-            wv.evaluateJavascript("if(window.__moveVirtualCursor) window.__moveVirtualCursor($x, $y);", null)
-        }
-    }
-
-    val dispatchClickAt: (Float, Float) -> Unit = { x, y ->
-        webViewInstance?.let { wv ->
-            try {
-                val downTime = SystemClock.uptimeMillis()
-                val downEvent = MotionEvent.obtain(
-                    downTime,
-                    downTime,
-                    MotionEvent.ACTION_DOWN,
-                    1,
-                    arrayOf(MotionEvent.PointerProperties().apply {
-                        id = 0
-                        toolType = MotionEvent.TOOL_TYPE_MOUSE
-                    }),
-                    arrayOf(MotionEvent.PointerCoords().apply {
-                        this.x = x
-                        this.y = y
-                        pressure = 1f
-                        size = 1f
-                    }),
-                    0,
-                    MotionEvent.BUTTON_PRIMARY,
-                    1f,
-                    1f,
-                    0,
-                    0,
-                    InputDevice.SOURCE_MOUSE,
-                    0
-                )
-                wv.dispatchTouchEvent(downEvent)
-                downEvent.recycle()
-
-                wv.postDelayed({
-                    try {
-                        val upTime = SystemClock.uptimeMillis()
-                        val upEvent = MotionEvent.obtain(
-                            downTime,
-                            upTime,
-                            MotionEvent.ACTION_UP,
-                            1,
-                            arrayOf(MotionEvent.PointerProperties().apply {
-                                id = 0
-                                toolType = MotionEvent.TOOL_TYPE_MOUSE
-                            }),
-                            arrayOf(MotionEvent.PointerCoords().apply {
-                                this.x = x
-                                this.y = y
-                                pressure = 1f
-                                size = 1f
-                            }),
-                            0,
-                            0,
-                            1f,
-                            1f,
-                            0,
-                            0,
-                            InputDevice.SOURCE_MOUSE,
-                            0
-                        )
-                        wv.dispatchTouchEvent(upEvent)
-                        upEvent.recycle()
-                    } catch (e: Exception) {}
-                }, 60)
-            } catch (e: Exception) {}
-            wv.evaluateJavascript("if(window.__clickVirtualCursor) window.__clickVirtualCursor($x, $y);", null)
-        }
-    }
 
     // Helper for 1-click direct return to catalog
     val returnToCatalogInOneClick: () -> Unit = {
@@ -412,15 +264,14 @@ fun BrowserScreen(
             ) { result ->
                 val cleanResult = result?.replace("\"", "")?.trim() ?: ""
                 when (cleanResult) {
-                    "menu_closed", "genres_closed", "search_closed", "ep_picker_closed", "category_cleared" -> {
-                        lastBackPressTime = 0L
+                    "menu_closed" -> {
+                        // Menu panel was closed cleanly with Back button on TV Box
                     }
                     "returned_to_detalhe" -> {
                         isUserInMovie = true
                         userRequestedWatch = false
                         latestBannerStream = null
                         repository.clearDetected()
-                        lastBackPressTime = 0L
                     }
                     "returned_to_catalog" -> {
                         isUserInMovie = false
@@ -428,20 +279,6 @@ fun BrowserScreen(
                         latestBannerStream = null
                         activeMovieTitle = null
                         repository.clearDetected()
-                        lastBackPressTime = 0L
-                    }
-                    "focused_header", "focused_menu" -> {
-                        // Moveu o foco de volta para o cabeçalho (Filmes / Séries / Menu) na Home (Imagem 2)
-                        lastBackPressTime = 0L
-                    }
-                    "exit_prompt" -> {
-                        val now = System.currentTimeMillis()
-                        if (now - lastBackPressTime < 2000) {
-                            (context as? android.app.Activity)?.finish()
-                        } else {
-                            lastBackPressTime = now
-                            Toast.makeText(context, "Pressione voltar novamente para sair do aplicativo", Toast.LENGTH_SHORT).show()
-                        }
                     }
                     else -> {
                         if (isUserInMovie) {
@@ -504,62 +341,20 @@ fun BrowserScreen(
                         null
                     )
                 }
-                PlayerViewModel.WebKeyAction.DPAD_UP -> {
-                    if (isMouseModeActive) {
-                        cursorY = (cursorY - 45f).coerceAtLeast(10f)
-                        dispatchHoverAt(cursorX, cursorY)
-                    }
-                }
-                PlayerViewModel.WebKeyAction.DPAD_DOWN -> {
-                    if (isMouseModeActive) {
-                        val maxH = (webViewInstance?.height?.toFloat() ?: 1200f) - 10f
-                        cursorY = (cursorY + 45f).coerceAtMost(maxH)
-                        dispatchHoverAt(cursorX, cursorY)
-                    }
-                }
-                PlayerViewModel.WebKeyAction.DPAD_LEFT -> {
-                    if (isMouseModeActive) {
-                        cursorX = (cursorX - 45f).coerceAtLeast(10f)
-                        dispatchHoverAt(cursorX, cursorY)
-                    }
-                }
-                PlayerViewModel.WebKeyAction.DPAD_RIGHT -> {
-                    if (isMouseModeActive) {
-                        val maxW = (webViewInstance?.width?.toFloat() ?: 1200f) - 10f
-                        cursorX = (cursorX + 45f).coerceAtMost(maxW)
-                        dispatchHoverAt(cursorX, cursorY)
-                    }
-                }
                 PlayerViewModel.WebKeyAction.DPAD_CENTER -> {
-                    if (isMouseModeActive) {
-                        isClicking = true
-                        dispatchClickAt(cursorX, cursorY)
-                        coroutineScope.launch {
-                            kotlinx.coroutines.delay(160)
-                            isClicking = false
-                        }
-                    } else {
-                        webViewInstance?.evaluateJavascript(
-                            "if(window.__handleTvRemoteOk) { window.__handleTvRemoteOk(); }",
-                            null
-                        )
-                    }
+                    webViewInstance?.evaluateJavascript(
+                        "if(window.__handleTvRemoteOk) { window.__handleTvRemoteOk(); }",
+                        null
+                    )
                 }
                 PlayerViewModel.WebKeyAction.TOGGLE_MENU -> {
-                    val next = playerViewModel.toggleMouseMode()
-                    isMouseModeActive = next
-                    mouseHudMessage = if (next) "Modo Mouse ATIVADO: Use as setas para mover e OK para clicar" else "Modo de Teclas ATIVADO"
-                    coroutineScope.launch {
-                        kotlinx.coroutines.delay(3000)
-                        mouseHudMessage = null
-                    }
-                    if (next) {
-                        if (cursorX <= 10f || cursorY <= 10f) {
-                            cursorX = (webViewInstance?.width?.toFloat() ?: 800f) / 2f
-                            cursorY = (webViewInstance?.height?.toFloat() ?: 600f) / 2f
-                        }
-                        dispatchHoverAt(cursorX, cursorY)
-                    }
+                    webViewInstance?.evaluateJavascript(
+                        "if(window.__toggleMenu) { window.__toggleMenu(); }",
+                        null
+                    )
+                }
+                else -> {
+                    // D-pad navigation handled naturally by WebView spatial navigation
                 }
             }
         }
@@ -943,31 +738,6 @@ fun BrowserScreen(
                                 }
 
                                 @JavascriptInterface
-                                fun baixarAtualizacao(url: String?) {
-                                    coroutineScope.launch(Dispatchers.Main) {
-                                        BaixarAtualizacao.baixar(ctx, url)
-                                    }
-                                }
-
-                                @JavascriptInterface
-                                fun isAppUpdated(): Boolean {
-                                    return BaixarAtualizacao.isAppAlreadyUpdated(ctx)
-                                }
-
-                                @JavascriptInterface
-                                fun isMandatoryBlocked(): Boolean {
-                                    return BaixarAtualizacao.isMandatoryBlocked(ctx)
-                                }
-
-                                @JavascriptInterface
-                                fun onOpenTvSearchKeyboard(currentQuery: String?) {
-                                    coroutineScope.launch(Dispatchers.Main) {
-                                        tvSearchQuery = currentQuery ?: ""
-                                        showTvSearchKeyboard = true
-                                    }
-                                }
-
-                                @JavascriptInterface
                                 fun onNavigatedToCatalog() {
                                     playerViewModel.stopPlayback()
                                     isUserInMovie = false
@@ -989,17 +759,6 @@ fun BrowserScreen(
 
                                         // 1. Block external app schemes (e.g. shopee://, market://, intent://)
                                         if (!reqUrl.startsWith("http://") && !reqUrl.startsWith("https://")) {
-                                            return true
-                                        }
-
-                                        // 1.1 Intercept APK downloads (GitHub release, meu-filme-novo-debug.apk or any .apk)
-                                        if (BaixarAtualizacao.ehApk(reqUrl, null) ||
-                                            lower.contains("meu-filme-novo-debug.apk") ||
-                                            (lower.contains("github.com") && lower.contains("/releases/download/")) ||
-                                            lower.endsWith(".apk")) {
-                                            coroutineScope.launch(Dispatchers.Main) {
-                                                BaixarAtualizacao.baixar(ctx, reqUrl)
-                                            }
                                             return true
                                         }
 
@@ -1038,27 +797,12 @@ fun BrowserScreen(
                                             return true
                                         }
 
-                                        // 4. Strict whitelist: allow our app system, authorized video embeds, stream hosts, and update repositories
+                                        // 4. Strict whitelist: only stay in our app system and authorized embeds (e.g. YouTube trailers)
                                         val isAllowedSystem = host.isEmpty() ||
                                             host.contains("meufilme") ||
                                             host.contains("filmemeu") ||
-                                            host.contains("github.com") ||
-                                            host.contains("githubusercontent.com") ||
                                             host.contains("myembed") ||
                                             host.contains("playerflix") ||
-                                            host.contains("vsembed") ||
-                                            host.contains("superflix") ||
-                                            host.contains("warezcdn") ||
-                                            host.contains("vidmoly") ||
-                                            host.contains("streamwish") ||
-                                            host.contains("filemoon") ||
-                                            host.contains("dood") ||
-                                            host.contains("mixdrop") ||
-                                            host.contains("voe.sx") ||
-                                            host.contains("streamtape") ||
-                                            host.contains("streamcrypt") ||
-                                            host.contains("uqload") ||
-                                            host.contains("embedder") ||
                                             host.contains("embedmovies") ||
                                             host.contains("vercel.app") ||
                                             host.contains("supabase") ||
@@ -1070,14 +814,13 @@ fun BrowserScreen(
                                             host.contains("googlevideo.com") ||
                                             host.contains("ytimg.com") ||
                                             host.contains("google.com") ||
-                                            host.contains("gstatic.com") ||
-                                            (isUserInMovie && (lower.contains(".m3u8") || lower.contains(".mp4") || lower.contains("/manifest")))
+                                            host.contains("gstatic.com")
 
                                         if (isAllowedSystem) {
                                             return false
                                         }
 
-                                        // Block any outside store/ad domain so the user stays strictly in our system
+                                        // Block any other outside domain so the user stays strictly in our system
                                         return true
                                     } catch (e: Exception) {
                                         return true
@@ -1093,7 +836,7 @@ fun BrowserScreen(
                                         if (reqUrl != null && isUserInMovie) {
                                             val lower = reqUrl.lowercase()
                                             val isYouTube = lower.contains("youtube.com") || lower.contains("googlevideo.com") || lower.contains("ytimg.com")
-                                            if (!isYouTube && (lower.contains(".m3u8") || lower.contains(".mp4") || lower.contains(".m4s") || lower.contains("playlist.m3u8") || lower.contains("/manifest"))) {
+                                            if (!isYouTube && (lower.contains(".m3u8") || lower.contains(".mp4"))) {
                                                 repository.onStreamCandidate(
                                                     url = reqUrl,
                                                     pageTitle = activeMovieTitle ?: "",
@@ -1103,9 +846,11 @@ fun BrowserScreen(
                                                 )
                                             }
 
-                                            // Subframe script injection for playerflix / myembed to auto-select language/server, skip ads, and auto-play
-                                            val isEmbedServer = (lower.contains("playerflix.ink") ||
-                                                                 lower.contains("myembed.biz")) &&
+                                            // Subframe script injection for playerflix / myembed to auto-click first server and auto-play
+                                            val isEmbedServer = (lower.contains("playerflix.ink/filme/") ||
+                                                                 lower.contains("playerflix.ink/serie/") ||
+                                                                 lower.contains("myembed.biz/filme/") ||
+                                                                 lower.contains("myembed.biz/serie/")) &&
                                                                 request.method.equals("GET", ignoreCase = true)
                                             if (isEmbedServer) {
                                                 val injected = injectAutomationIntoEmbed(reqUrl, request)
@@ -1202,101 +947,6 @@ fun BrowserScreen(
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 12.dp)
                 )
-
-                // Virtual TV Mouse Overlay
-                if (isMouseModeActive) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        // Floating Mode Toggle Chip Button
-                        Surface(
-                            onClick = {
-                                val next = playerViewModel.toggleMouseMode()
-                                isMouseModeActive = next
-                                mouseHudMessage = if (next) "Modo Mouse ATIVADO: Use as setas para mover e OK para clicar" else "Modo de Teclas ATIVADO"
-                                coroutineScope.launch {
-                                    kotlinx.coroutines.delay(2500)
-                                    mouseHudMessage = null
-                                }
-                            },
-                            shape = RoundedCornerShape(20.dp),
-                            color = CinemaDark.copy(alpha = 0.9f),
-                            border = BorderStroke(1.dp, NeonCyan),
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(top = 8.dp, end = 12.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.NearMe,
-                                    contentDescription = "Mouse TV",
-                                    tint = NeonCyan,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Mouse Virtual [OK]",
-                                    color = NeonCyan,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-
-                        // Animated Pointer Cursor
-                        Box(
-                            modifier = Modifier
-                                .offset { IntOffset(cursorX.roundToInt(), cursorY.roundToInt()) }
-                                .size(if (isClicking) 32.dp else 26.dp)
-                        ) {
-                            if (isClicking) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(NeonCyan.copy(alpha = 0.45f), shape = RoundedCornerShape(50))
-                                )
-                            }
-                            Canvas(modifier = Modifier.fillMaxSize()) {
-                                val primary = androidx.compose.ui.graphics.Color(0xFF00E5FF)
-                                val darkStroke = androidx.compose.ui.graphics.Color(0xFF050912)
-
-                                val arrowPath = androidx.compose.ui.graphics.Path().apply {
-                                    moveTo(0f, 0f)
-                                    lineTo(size.width * 0.72f, size.height * 0.48f)
-                                    lineTo(size.width * 0.44f, size.height * 0.52f)
-                                    lineTo(size.width * 0.64f, size.height)
-                                    lineTo(size.width * 0.44f, size.height)
-                                    lineTo(size.width * 0.28f, size.height * 0.58f)
-                                    lineTo(0f, size.height * 0.82f)
-                                    close()
-                                }
-                                drawPath(arrowPath, color = darkStroke, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.5f))
-                                drawPath(arrowPath, color = primary)
-                            }
-                        }
-
-                        // Floating instruction HUD
-                        if (mouseHudMessage != null) {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = CinemaBlack.copy(alpha = 0.92f),
-                                border = BorderStroke(1.dp, NeonCyan),
-                                modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .padding(bottom = 65.dp)
-                            ) {
-                                Text(
-                                    text = mouseHudMessage ?: "",
-                                    color = TextPrimary,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                                )
-                            }
-                        }
-                    }
-                }
             }
         }
 
@@ -1394,217 +1044,6 @@ fun BrowserScreen(
             }
         )
     }
-
-    // Native TV Box On-Screen Search Keyboard Dialog (controlled via D-pad & OK)
-    if (showTvSearchKeyboard) {
-        TvSearchDialog(
-            initialQuery = tvSearchQuery,
-            onQueryChange = { newQuery ->
-                tvSearchQuery = newQuery
-                val safeQuery = newQuery.replace("\\", "\\\\").replace("'", "\\'")
-                webViewInstance?.evaluateJavascript(
-                    "if (window.__updateSearchQuery) window.__updateSearchQuery('$safeQuery');",
-                    null
-                )
-            },
-            onDismiss = {
-                showTvSearchKeyboard = false
-                if (tvSearchQuery.isBlank()) {
-                    webViewInstance?.evaluateJavascript(
-                        "if (window.__closeSearch) window.__closeSearch();",
-                        null
-                    )
-                }
-            },
-            onSearchConfirmed = { finalQuery ->
-                showTvSearchKeyboard = false
-                val safeQuery = finalQuery.replace("\\", "\\\\").replace("'", "\\'")
-                webViewInstance?.evaluateJavascript(
-                    "if (window.__updateSearchQuery) window.__updateSearchQuery('$safeQuery');",
-                    null
-                )
-            }
-        )
-    }
-}
-
-@Composable
-private fun TvSearchDialog(
-    initialQuery: String,
-    onQueryChange: (String) -> Unit,
-    onDismiss: () -> Unit,
-    onSearchConfirmed: (String) -> Unit
-) {
-    var query by remember { mutableStateOf(initialQuery) }
-
-    val rows = remember {
-        listOf(
-            listOf("A", "B", "C", "D", "E", "F", "G", "1", "2", "3"),
-            listOf("H", "I", "J", "K", "L", "M", "N", "4", "5", "6"),
-            listOf("O", "P", "Q", "R", "S", "T", "U", "7", "8", "9"),
-            listOf("V", "W", "X", "Y", "Z", "-", " ", ".", "0", "⌫")
-        )
-    }
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(CinemaBlack.copy(alpha = 0.92f))
-                .padding(16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                modifier = Modifier
-                    .widthIn(max = 680.dp)
-                    .background(CinemaDark, shape = RoundedCornerShape(16.dp))
-                    .border(1.5.dp, CinemaCardBorder, RoundedCornerShape(16.dp))
-                    .padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // Header
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Buscar",
-                        tint = NeonCyan,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = "Buscar no Catálogo (Controle Remoto)",
-                        color = TextPrimary,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.weight(1f))
-                    IconButton(onClick = onDismiss) {
-                        Text("✕", color = TextSecondary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Search query display bar
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = CinemaBlack,
-                    border = BorderStroke(1.5.dp, if (query.isNotEmpty()) NeonCyan else CinemaCardBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = if (query.isNotEmpty()) query else "Digite o nome usando as setas e OK...",
-                            color = if (query.isNotEmpty()) TextPrimary else TextSecondary,
-                            fontSize = 16.sp,
-                            fontWeight = if (query.isNotEmpty()) FontWeight.Bold else FontWeight.Normal,
-                            modifier = Modifier.weight(1f)
-                        )
-                        if (query.isNotEmpty()) {
-                            TextButton(
-                                onClick = {
-                                    query = ""
-                                    onQueryChange("")
-                                }
-                            ) {
-                                Text("Limpar", color = NeonAmber, fontSize = 13.sp)
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // TV Virtual Keyboard Rows (D-pad navigable)
-                rows.forEach { rowKeys ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 3.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
-                    ) {
-                        rowKeys.forEach { keyLabel ->
-                            val isBackspace = keyLabel == "⌫"
-                            val isSpace = keyLabel == " "
-
-                            Button(
-                                onClick = {
-                                    if (isBackspace) {
-                                        if (query.isNotEmpty()) {
-                                            query = query.dropLast(1)
-                                            onQueryChange(query)
-                                        }
-                                    } else {
-                                        query += keyLabel
-                                        onQueryChange(query)
-                                    }
-                                },
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isBackspace) CinemaCardBorder else CinemaSurface,
-                                    contentColor = if (isBackspace) NeonAmber else TextPrimary
-                                ),
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-                                modifier = Modifier
-                                    .height(44.dp)
-                                    .then(
-                                        if (isSpace) Modifier.width(68.dp)
-                                        else if (isBackspace) Modifier.width(52.dp)
-                                        else Modifier.width(44.dp)
-                                    )
-                            ) {
-                                Text(
-                                    text = if (isSpace) "Espaço" else keyLabel,
-                                    fontSize = if (isSpace) 11.sp else 16.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Bottom Action Buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)
-                ) {
-                    TextButton(
-                        onClick = onDismiss,
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text("Fechar", color = TextSecondary)
-                    }
-
-                    Button(
-                        onClick = {
-                            onSearchConfirmed(query)
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = NeonCyan,
-                            contentColor = CinemaBlack
-                        ),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.height(44.dp)
-                    ) {
-                        Text("✓ Concluir Busca", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    }
-                }
-            }
-        }
-    }
 }
 
 private fun injectAutomationIntoEmbed(urlStr: String, request: WebResourceRequest): WebResourceResponse? {
@@ -1648,83 +1087,37 @@ private fun injectAutomationIntoEmbed(urlStr: String, request: WebResourceReques
         val scriptToInject = """
         <script>
         (function() {
-            try {
-                var style = document.createElement('style');
-                style.textContent = [
-                    '.icon-btn, .panel-item, button, [role="button"], .option, .skip, .play { cursor: pointer !important; }',
-                    '.icon-btn:hover, .icon-btn:focus, .panel-item:hover, .panel-item:focus, button:focus, .option:focus { outline: 3px solid #00E5FF !important; box-shadow: 0 0 16px rgba(0, 229, 255, 0.8) !important; transform: scale(1.08) !important; transition: transform 0.15s ease !important; }'
-                ].join('\n');
-                document.head.appendChild(style);
-            } catch(e) {}
-
-            var clickedOption = false;
-            function autoSelectLanguageAndServer() {
-                if (clickedOption) return;
-                try {
-                    var items = document.querySelectorAll('.panel-item, #optionList .option, .option, [onclick*="player"]');
-                    if (items && items.length > 0) {
-                        var chosen = null;
-                        for (var i = 0; i < items.length; i++) {
-                            var item = items[i];
-                            if (item && item.offsetParent !== null) {
-                                var txt = (item.textContent || '').toLowerCase();
-                                if (txt.indexOf('dub') !== -1 || txt.indexOf('dublado') !== -1) {
-                                    chosen = item;
-                                    break;
-                                }
-                                if (!chosen) chosen = item;
-                            }
-                        }
-                        if (chosen) {
-                            chosen.click();
-                            clickedOption = true;
-                        }
+            var clickedServer = false;
+            function autoClickFirstServer() {
+                if (clickedServer) return;
+                var opts = document.querySelectorAll('#optionList .option, #optionList > div, .option, [onclick*="player"]');
+                for (var i = 0; i < opts.length; i++) {
+                    var o = opts[i];
+                    if (o && o.offsetParent !== null) {
+                        clickedServer = true;
+                        o.click();
+                        break;
                     }
-                } catch(e) {}
+                }
             }
-            setInterval(autoSelectLanguageAndServer, 300);
+            setInterval(autoClickFirstServer, 100);
 
-            function autoSkipAds() {
+            function autoPlayEmbed() {
                 try {
-                    var skipBtns = document.querySelectorAll(
-                        '[class*="skip" i], [id*="skip" i], .videoAdUiSkipButton, .vast-skip-button, .ytp-ad-skip-button, button.skip, .skip-btn'
-                    );
-                    for (var i = 0; i < skipBtns.length; i++) {
-                        var sb = skipBtns[i];
-                        if (sb && sb.offsetParent !== null) {
-                            sb.click();
-                        }
-                    }
-                } catch(e) {}
-            }
-            setInterval(autoSkipAds, 400);
-
-            var playedOnce = false;
-            function safeAutoPlay() {
-                if (playedOnce) return;
-                try {
-                    var playBtn = document.querySelector('.play-btn, .vjs-big-play-button, .jw-display-icon-container, [aria-label*="Play" i], button.play');
-                    if (playBtn && playBtn.offsetParent !== null) {
-                        playBtn.click();
-                        playedOnce = true;
-                        return;
-                    }
+                    var playBtns = document.querySelectorAll('.play-btn, .vjs-big-play-button, .jw-display-icon-container, [aria-label*="Play" i], button.play, .play');
+                    playBtns.forEach(function(b) {
+                        if (b && b.offsetParent !== null) b.click();
+                    });
                     var vids = document.querySelectorAll('video');
-                    for (var j = 0; j < vids.length; j++) {
-                        var v = vids[j];
-                        if (v && v.paused && !v.__triedAutoPlay) {
-                            v.__triedAutoPlay = true;
+                    vids.forEach(function(v) {
+                        if (v.paused) {
                             v.muted = false;
-                            v.play().then(function() { playedOnce = true; }).catch(function() {
-                                v.muted = true;
-                                v.play().catch(function(){});
-                            });
-                            break;
+                            v.play().catch(function(){});
                         }
-                    }
+                    });
                 } catch(e) {}
             }
-            setInterval(safeAutoPlay, 500);
+            setInterval(autoPlayEmbed, 350);
         })();
         </script>
         """.trimIndent()

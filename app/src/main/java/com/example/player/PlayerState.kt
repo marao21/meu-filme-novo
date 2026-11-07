@@ -18,7 +18,6 @@ data class PlayerState(
     val availableQualities: List<String> = emptyList(),
     val isLowMemoryMode: Boolean = false,
     val isSmartBufferActive: Boolean = true,
-    val autoQualityNotice: String? = null,
     val errorMessage: String? = null
 ) {
     val progressFraction: Float

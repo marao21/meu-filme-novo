@@ -80,25 +80,7 @@ class PlayerViewModel(
         _playerControlsTrigger.value = System.currentTimeMillis()
     }
 
-    private val _isMouseModeEnabled = MutableStateFlow(false)
-    val isMouseModeEnabled: StateFlow<Boolean> = _isMouseModeEnabled.asStateFlow()
-
-    fun setMouseModeEnabled(enabled: Boolean) {
-        _isMouseModeEnabled.value = enabled
-    }
-
-    fun toggleMouseMode(): Boolean {
-        val next = !_isMouseModeEnabled.value
-        _isMouseModeEnabled.value = next
-        return next
-    }
-
     private var positionTrackerJob: Job? = null
-    private var autoQualityJob: Job? = null
-    private var bufferingStartMs = 0L
-    private var currentAutoCapHeight: Int? = null
-    private var smoothPlaybackSeconds = 0
-    private var noticeJob: Job? = null
 
     @Volatile
     private var pendingSeekPositionMs = 0L
@@ -109,16 +91,16 @@ class PlayerViewModel(
     private var reconnectionAttempts = 0
 
     private fun buildSmartLoadControl(lowMemoryMode: Boolean): DefaultLoadControl {
-        // YouTube-style Adaptive Buffer specifications:
-        // - Initial playback starts in 1.5s (prevents indefinite freezing on weak internet)
-        // - Fast rebuffer recovery: 2.5s
-        // - Safe buffer window: 15s to 35s
-        // - Back buffer: 10s
-        // - Memory protection: 16MB to 32MB
-        val minBufferMs = if (lowMemoryMode) 12_000 else 15_000
-        val maxBufferMs = if (lowMemoryMode) 25_000 else 35_000
-        val bufferForPlaybackMs = 1_500
-        val bufferForPlaybackAfterRebufferMs = 2_500
+        // Smart Buffer specifications:
+        // - Initial playback buffer: 5 to 8 seconds (5,000ms - 8,000ms)
+        // - Normal buffer: 20 to 30 seconds
+        // - Unstable network expansion: up to 45 seconds
+        // - Back buffer: 15 seconds to prevent re-downloading on 10s rewinds
+        // - TV Box low memory protection: 16MB to 32MB buffer ceiling
+        val minBufferMs = if (lowMemoryMode) 15_000 else 20_000
+        val maxBufferMs = if (lowMemoryMode) 25_000 else 45_000
+        val bufferForPlaybackMs = 5_000
+        val bufferForPlaybackAfterRebufferMs = 8_000
         val targetBufferBytes = if (lowMemoryMode) 16 * 1024 * 1024 else 32 * 1024 * 1024
 
         return DefaultLoadControl.Builder()
@@ -130,39 +112,20 @@ class PlayerViewModel(
             )
             .setTargetBufferBytes(targetBufferBytes)
             .setPrioritizeTimeOverSizeThresholds(true)
-            .setBackBuffer(10_000, true)
+            .setBackBuffer(15_000, true)
             .build()
     }
 
     init {
-        // Responsive ABR: drops quickly when buffer drains, requires 10s stability before upgrading
-        val adaptiveTrackSelectionFactory = AdaptiveTrackSelection.Factory(
-            /* minDurationForQualityIncreaseMs = */ 10_000,
-            /* maxDurationForQualityDecreaseMs = */ 8_000,
-            /* minDurationToRetainAfterDiscardMs = */ 4_000,
-            /* bandwidthFraction = */ 0.70f
-        )
-        trackSelector = DefaultTrackSelector(application, adaptiveTrackSelectionFactory)
-        trackSelector.parameters = trackSelector.buildUponParameters()
-            .setAllowMultipleAdaptiveSelections(true)
-            .setExceedRendererCapabilitiesIfNecessary(true)
-            .setExceedVideoConstraintsIfNecessary(true)
-            .setTunnelingEnabled(false)
-            .build()
-
-        bandwidthMeter = DefaultBandwidthMeter.Builder(application)
-            .setInitialBitrateEstimate(1_200_000L) // 1.2 Mbps baseline (starts fast at 480p/720p without stalling)
-            .setSlidingWindowMaxWeight(1000) // Lower sliding window weight adapts 2x faster to internet dips
-            .setResetOnNetworkTypeChange(true)
-            .build()
+        trackSelector = DefaultTrackSelector(application, AdaptiveTrackSelection.Factory())
+        bandwidthMeter = DefaultBandwidthMeter.Builder(application).build()
 
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(8000)
-            .setReadTimeoutMs(12000)
+            .setConnectTimeoutMs(10000)
+            .setReadTimeoutMs(15000)
             .setUserAgent("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
             .setDefaultRequestProperties(mapOf("Referer" to "https://filmemeu.vercel.app/"))
-            .setTransferListener(bandwidthMeter)
 
         val errorHandlingPolicy = DefaultLoadErrorHandlingPolicy(5)
 
@@ -189,9 +152,13 @@ class PlayerViewModel(
         exoPlayer.addListener(object : Player.Listener {
             override fun onTracksChanged(tracks: Tracks) {
                 val available = mutableListOf<String>()
+                var hasMultiResolution = false
                 for (group in tracks.groups) {
                     if (group.type == C.TRACK_TYPE_VIDEO) {
                         val count = group.length
+                        if (count > 1) {
+                            hasMultiResolution = true
+                        }
                         for (i in 0 until count) {
                             val format = group.getTrackFormat(i)
                             val h = format.height
@@ -205,13 +172,12 @@ class PlayerViewModel(
                     }
                 }
                 available.sortByDescending { it.replace("p", "").toIntOrNull() ?: 0 }
-                val standardTiers = listOf("1080p", "720p", "480p", "360p")
-                val fullList = if (available.size > 1) {
+                val fullList = if (hasMultiResolution || available.size > 1) {
                     listOf("AUTO") + available
                 } else if (available.isNotEmpty()) {
-                    listOf("AUTO") + (listOf(available.first()) + standardTiers).distinct()
+                    listOf("AUTO (${available.first()})")
                 } else {
-                    listOf("AUTO", "1080p", "720p", "480p", "360p")
+                    listOf("AUTO")
                 }
                 _playerState.update { it.copy(availableQualities = fullList) }
             }
@@ -221,7 +187,7 @@ class PlayerViewModel(
                 if (h > 0) {
                     val currentRes = "${h}p"
                     val pref = _playerState.value.selectedQualityPreference
-                    val label = if (pref == "AUTO" || pref.startsWith("AUTO")) "AUTO ($currentRes)" else currentRes
+                    val label = if (pref == "AUTO") "AUTO · $currentRes" else currentRes
                     _playerState.update { it.copy(currentQualityLabel = label) }
                 }
             }
@@ -229,13 +195,9 @@ class PlayerViewModel(
             override fun onPlaybackStateChanged(playbackState: Int) {
                 when (playbackState) {
                     Player.STATE_BUFFERING -> {
-                        if (bufferingStartMs == 0L) {
-                            bufferingStartMs = System.currentTimeMillis()
-                        }
                         _playerState.update { it.copy(isLoading = true, errorMessage = null) }
                     }
                     Player.STATE_READY -> {
-                        bufferingStartMs = 0L
                         reconnectionAttempts = 0
                         val duration = exoPlayer.duration.coerceAtLeast(0L)
                         // Discard if stream has duration under 15 minutes (less than 900,000 ms)
@@ -380,15 +342,6 @@ class PlayerViewModel(
         exoPlayer.prepare()
         exoPlayer.playWhenReady = true
 
-        currentAutoCapHeight = null
-        bufferingStartMs = 0L
-        smoothPlaybackSeconds = 0
-        if (_playerState.value.selectedQualityPreference == "AUTO") {
-            clearResolutionConstraint()
-        }
-        startPositionTracker()
-        startAutoQualitySupervisor()
-
         _playerState.update {
             it.copy(
                 currentStream = stream,
@@ -493,12 +446,6 @@ class PlayerViewModel(
             }
             repository.notifyPlayerClosed(current.url)
         }
-        autoQualityJob?.cancel()
-        noticeJob?.cancel()
-        currentAutoCapHeight = null
-        bufferingStartMs = 0L
-        smoothPlaybackSeconds = 0
-
         exoPlayer.stop()
         exoPlayer.clearMediaItems()
         _playerState.update {
@@ -508,119 +455,29 @@ class PlayerViewModel(
                 isLoading = false,
                 currentPositionMs = 0L,
                 totalDurationMs = 0L,
-                errorMessage = null,
-                autoQualityNotice = null
+                errorMessage = null
             )
-        }
-    }
-
-    fun showAutoQualityNotice(message: String) {
-        noticeJob?.cancel()
-        _playerState.update { it.copy(autoQualityNotice = message) }
-        noticeJob = viewModelScope.launch {
-            delay(3500)
-            _playerState.update { it.copy(autoQualityNotice = null) }
-        }
-    }
-
-    private fun applyResolutionConstraint(maxHeight: Int) {
-        trackSelector.parameters = trackSelector.buildUponParameters()
-            .setMaxVideoSize(1920, maxHeight)
-            .build()
-    }
-
-    private fun clearResolutionConstraint() {
-        trackSelector.parameters = trackSelector.buildUponParameters()
-            .clearVideoSizeConstraints()
-            .build()
-    }
-
-    private fun startAutoQualitySupervisor() {
-        autoQualityJob?.cancel()
-        autoQualityJob = viewModelScope.launch {
-            while (isActive) {
-                delay(1000)
-                val pref = _playerState.value.selectedQualityPreference
-                if (pref != "AUTO" && !pref.startsWith("AUTO")) {
-                    continue
-                }
-
-                val playbackState = exoPlayer.playbackState
-                val isPlaying = exoPlayer.isPlaying
-
-                if (playbackState == Player.STATE_BUFFERING) {
-                    smoothPlaybackSeconds = 0
-                    if (bufferingStartMs == 0L) {
-                        bufferingStartMs = System.currentTimeMillis()
-                    }
-                    val bufferWaitMs = System.currentTimeMillis() - bufferingStartMs
-
-                    // Se a internet estiver fraca e o vídeo travar carregando por mais de 2.5s:
-                    // Abaixa imediatamente para 720p, 480p ou 360p para nunca travar a reprodução!
-                    if (bufferWaitMs >= 2500 && (currentAutoCapHeight == null || currentAutoCapHeight!! > 720)) {
-                        currentAutoCapHeight = 720
-                        applyResolutionConstraint(720)
-                        showAutoQualityNotice("Internet lenta: ajustando para 720p...")
-                    } else if (bufferWaitMs >= 5000 && (currentAutoCapHeight == null || currentAutoCapHeight!! > 480)) {
-                        currentAutoCapHeight = 480
-                        applyResolutionConstraint(480)
-                        showAutoQualityNotice("Internet lenta: ajustando para 480p...")
-                    } else if (bufferWaitMs >= 8000 && (currentAutoCapHeight == null || currentAutoCapHeight!! > 360)) {
-                        currentAutoCapHeight = 360
-                        applyResolutionConstraint(360)
-                        showAutoQualityNotice("Internet instável: ajustando para 360p...")
-                    }
-                } else if (playbackState == Player.STATE_READY && isPlaying) {
-                    bufferingStartMs = 0L
-                    smoothPlaybackSeconds++
-
-                    // Quando a internet se estabiliza e toca continuamente sem travar por 25s:
-                    // Restaura gradualmente a qualidade de volta até 1080p Full HD!
-                    if (smoothPlaybackSeconds >= 25 && currentAutoCapHeight != null) {
-                        smoothPlaybackSeconds = 0
-                        when (currentAutoCapHeight) {
-                            360 -> {
-                                currentAutoCapHeight = 480
-                                applyResolutionConstraint(480)
-                                showAutoQualityNotice("Internet normalizada: melhorando para 480p...")
-                            }
-                            480 -> {
-                                currentAutoCapHeight = 720
-                                applyResolutionConstraint(720)
-                                showAutoQualityNotice("Internet normalizada: melhorando para 720p...")
-                            }
-                            720 -> {
-                                currentAutoCapHeight = null
-                                clearResolutionConstraint()
-                                showAutoQualityNotice("Internet rápida: restaurando Full HD 1080p...")
-                            }
-                        }
-                    }
-                } else {
-                    bufferingStartMs = 0L
-                }
-            }
         }
     }
 
     fun setQualityPreference(quality: String) {
         _playerState.update { it.copy(selectedQualityPreference = quality) }
         if (quality == "AUTO" || quality.startsWith("ORIGINAL") || quality.startsWith("AUTO")) {
-            currentAutoCapHeight = null
-            clearResolutionConstraint()
+            trackSelector.setParameters(
+                trackSelector.buildUponParameters()
+                    .clearVideoSizeConstraints()
+            )
             val currentH = exoPlayer.videoSize.height
-            val label = if (currentH > 0) "AUTO (${currentH}p)" else "AUTO"
+            val label = if (currentH > 0) "AUTO · ${currentH}p" else "AUTO"
             _playerState.update { it.copy(currentQualityLabel = label) }
-            showAutoQualityNotice("Qualidade Automática ativada (modo YouTube)")
         } else {
             val targetHeight = quality.replace("p", "").toIntOrNull() ?: return
-            currentAutoCapHeight = targetHeight
-            trackSelector.parameters = trackSelector.buildUponParameters()
-                .setMaxVideoSize(1920, targetHeight)
-                .setMinVideoSize(0, targetHeight)
-                .build()
+            trackSelector.setParameters(
+                trackSelector.buildUponParameters()
+                    .setMaxVideoSize(1920, targetHeight)
+                    .setMinVideoSize(0, targetHeight)
+            )
             _playerState.update { it.copy(currentQualityLabel = quality) }
-            showAutoQualityNotice("Qualidade fixada em $quality")
         }
     }
 

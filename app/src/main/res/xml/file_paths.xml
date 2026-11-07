@@ -8,7 +8,6 @@
 -->
 <paths>
     <external-files-path name="downloads" path="Download/" />
-    <external-files-path name="external" path="." />
     <files-path name="arquivos" path="." />
     <cache-path name="cache" path="." />
 </paths>

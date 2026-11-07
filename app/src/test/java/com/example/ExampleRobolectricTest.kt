@@ -12,7 +12,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
+@Config(sdk = [34])
 class ExampleRobolectricTest {
 
   @Test
@@ -99,96 +99,5 @@ class ExampleRobolectricTest {
 
     repo.setFilterAbove15Min(true)
     assertTrue(repo.filterAbove15Min.value)
-  }
-
-  @Test
-  fun `apk update url detection and app updated state`() {
-    val context = ApplicationProvider.getApplicationContext<Context>()
-    val gitHubApkUrl = "https://github.com/marao21/meu-filme-novo/releases/download/apk-latest/meu-filme-novo-debug.apk"
-    val standardApk = "https://example.com/app/update.apk"
-    val queryApk = "https://example.com/download?file=app.apk&v=2"
-    val webPage = "https://example.com/about.html"
-
-    assertTrue(com.example.update.BaixarAtualizacao.ehApk(gitHubApkUrl, null))
-    assertTrue(com.example.update.BaixarAtualizacao.ehApk(standardApk, null))
-    assertTrue(com.example.update.BaixarAtualizacao.ehApk(queryApk, null))
-    assertFalse(com.example.update.BaixarAtualizacao.ehApk(webPage, "text/html"))
-    assertTrue(com.example.update.BaixarAtualizacao.ehApk(webPage, "application/vnd.android.package-archive"))
-
-    assertEquals(
-      "https://github.com/marao21/meu-filme-novo/releases/download/apk-latest/meu-filme-novo-debug.apk",
-      com.example.update.BaixarAtualizacao.APK_DEFAULT_URL
-    )
-
-    // With versionCode = 20, isAppAlreadyUpdated is true so the update banner doesn't keep appearing
-    assertTrue(com.example.update.BaixarAtualizacao.isAppAlreadyUpdated(context))
-
-    // Mark update as done persists
-    com.example.update.BaixarAtualizacao.markUpdateAsDone(context)
-    assertTrue(com.example.update.BaixarAtualizacao.isAppAlreadyUpdated(context))
-  }
-
-  @Test
-  fun `mandatory update policy blocks access after 2 updates behind`() {
-    val context = ApplicationProvider.getApplicationContext<Context>()
-    val currentCode = com.example.BuildConfig.VERSION_CODE // 20
-
-    // 0 updates behind: fully up to date -> NOT blocked
-    com.example.update.BaixarAtualizacao.setSimulatedRemoteVersion(context, currentCode, "2.9")
-    val vInfo0 = com.example.update.BaixarAtualizacao.versionInfo.value
-    assertFalse(vInfo0.isMandatoryBlock)
-    assertFalse(com.example.update.BaixarAtualizacao.isMandatoryBlocked(context))
-    assertEquals(0, vInfo0.updatesBehind)
-
-    // 1 update behind (e.g. v2.9 code 20 vs remote v3.0 code 21): within 2 updates tolerance -> NOT blocked
-    com.example.update.BaixarAtualizacao.setSimulatedRemoteVersion(context, currentCode + 1, "3.0")
-    val vInfo1 = com.example.update.BaixarAtualizacao.versionInfo.value
-    assertFalse(vInfo1.isMandatoryBlock)
-    assertFalse(com.example.update.BaixarAtualizacao.isMandatoryBlocked(context))
-    assertTrue(vInfo1.isUpdateAvailable)
-    assertEquals(1, vInfo1.updatesBehind)
-
-    // 2 updates behind (e.g. code 20 vs remote code 22): 2 updates reached -> BLOCKED ("não deixa acessar nada")
-    com.example.update.BaixarAtualizacao.setSimulatedRemoteVersion(context, currentCode + 2, "3.1")
-    val vInfo2 = com.example.update.BaixarAtualizacao.versionInfo.value
-    assertTrue(vInfo2.isMandatoryBlock)
-    assertTrue(com.example.update.BaixarAtualizacao.isMandatoryBlocked(context))
-    assertEquals(2, vInfo2.updatesBehind)
-
-    // 3+ updates behind (e.g. code 20 vs remote code 25): BLOCKED
-    com.example.update.BaixarAtualizacao.setSimulatedRemoteVersion(context, currentCode + 5, "3.4")
-    val vInfo5 = com.example.update.BaixarAtualizacao.versionInfo.value
-    assertTrue(vInfo5.isMandatoryBlock)
-    assertTrue(com.example.update.BaixarAtualizacao.isMandatoryBlocked(context))
-    assertEquals(5, vInfo5.updatesBehind)
-  }
-
-  @Test
-  fun `quality preference and adaptive auto quality controls`() {
-    val application = ApplicationProvider.getApplicationContext<android.app.Application>()
-    val viewModel = com.example.player.PlayerViewModel(application)
-
-    // Initial state is AUTO
-    assertEquals("AUTO", viewModel.playerState.value.selectedQualityPreference)
-
-    // Manual quality set to 720p
-    viewModel.setQualityPreference("720p")
-    assertEquals("720p", viewModel.playerState.value.selectedQualityPreference)
-    assertEquals("720p", viewModel.playerState.value.currentQualityLabel)
-
-    // Manual quality set to 480p
-    viewModel.setQualityPreference("480p")
-    assertEquals("480p", viewModel.playerState.value.selectedQualityPreference)
-    assertEquals("480p", viewModel.playerState.value.currentQualityLabel)
-
-    // Manual quality set to 360p
-    viewModel.setQualityPreference("360p")
-    assertEquals("360p", viewModel.playerState.value.selectedQualityPreference)
-    assertEquals("360p", viewModel.playerState.value.currentQualityLabel)
-
-    // Back to AUTO mode
-    viewModel.setQualityPreference("AUTO")
-    assertEquals("AUTO", viewModel.playerState.value.selectedQualityPreference)
-    assertTrue(viewModel.playerState.value.currentQualityLabel.startsWith("AUTO"))
   }
 }

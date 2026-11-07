@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.filmemeu.stream"
     minSdk = 24
     targetSdk = 36
-    versionCode = 21
-    versionName = "3.0"
+    versionCode = 19
+    versionName = "2.8"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -63,15 +63,7 @@ android {
     compose = true
     buildConfig = true
   }
-  testOptions {
-    unitTests {
-      isIncludeAndroidResources = true
-      all {
-        it.systemProperty("robolectric.offline", "true")
-        it.systemProperty("robolectric.dependency.dir", "/home/appuser/.m2/repository/org/robolectric/android-all-instrumented/16-robolectric-13921718-i7")
-      }
-    }
-  }
+  testOptions { unitTests { isIncludeAndroidResources = true } }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true

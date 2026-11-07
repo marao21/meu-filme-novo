@@ -10,38 +10,24 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import com.example.player.PlayerViewModel
 import com.example.ui.screens.BrowserScreen
 import com.example.ui.screens.DetectedStreamsDialog
-import com.example.ui.screens.MandatoryUpdateScreen
 import com.example.ui.screens.PlayerScreen
-import com.example.ui.screens.UpdateProgressDialog
 import com.example.ui.theme.CinemaBlack
-import com.example.update.BaixarAtualizacao
 
 @Composable
 fun MainScreen(
     playerViewModel: PlayerViewModel,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     val repository = playerViewModel.repository
     val playerState by playerViewModel.playerState.collectAsState()
-    val updateState by BaixarAtualizacao.downloadState.collectAsState()
-    val versionInfo by BaixarAtualizacao.versionInfo.collectAsState()
     var showStreamsDialog by remember { mutableStateOf(false) }
-
-    LaunchedEffect(versionInfo.isMandatoryBlock) {
-        if (versionInfo.isMandatoryBlock) {
-            playerViewModel.stopPlayback()
-        }
-    }
 
     val isPlayerActive = playerState.currentStream != null
 
@@ -89,7 +75,7 @@ fun MainScreen(
         }
 
         // Optional Detected Streams Dialog (for TV Box when user wants to see all streams)
-        if (showStreamsDialog && !versionInfo.isMandatoryBlock) {
+        if (showStreamsDialog) {
             DetectedStreamsDialog(
                 repository = repository,
                 onPlayStream = { stream ->
@@ -97,26 +83,6 @@ fun MainScreen(
                     playerViewModel.playStream(stream)
                 },
                 onDismiss = { showStreamsDialog = false }
-            )
-        }
-
-        // Fullscreen Mandatory Update Screen (When 2 or more updates behind)
-        if (versionInfo.isMandatoryBlock) {
-            MandatoryUpdateScreen(
-                versionInfo = versionInfo,
-                onUpdate = { BaixarAtualizacao.baixar(context) },
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-
-        // Native In-App Update Dialog (Smartphone & TV Box)
-        if (updateState !is BaixarAtualizacao.DownloadState.Idle) {
-            UpdateProgressDialog(
-                state = updateState,
-                onDismiss = { BaixarAtualizacao.dismiss() },
-                onCancel = { BaixarAtualizacao.cancelar() },
-                onInstall = { BaixarAtualizacao.abrirInstalador(context) },
-                onRetry = { BaixarAtualizacao.baixar(context) }
             )
         }
     }

@@ -118,92 +118,6 @@ object InjectedJs {
                 setTimeout(autoUnlockCatalog, 600);
                 setTimeout(autoUnlockCatalog, 1500);
 
-                // Update management:
-                // 1. Intercept and hook APK download buttons (#btn-apk, #apk-faixa-baixar, .apk links)
-                // 2. If app is updated, suppress #apk-faixa permanently so it never keeps showing up!
-                function gerenciarAtualizacaoApk() {
-                    try {
-                        var isUpdated = true;
-                        try {
-                            if (window.AndroidBridge && typeof window.AndroidBridge.isAppUpdated === 'function') {
-                                isUpdated = window.AndroidBridge.isAppUpdated();
-                            }
-                        } catch(e) {}
-
-                        var isBlocked = false;
-                        try {
-                            if (window.AndroidBridge && typeof window.AndroidBridge.isMandatoryBlocked === 'function') {
-                                isBlocked = window.AndroidBridge.isMandatoryBlocked();
-                            }
-                        } catch(e) {}
-
-                        if (isBlocked) {
-                            try {
-                                var media = document.querySelectorAll('video, audio');
-                                for (var m = 0; m < media.length; m++) {
-                                    media[m].pause();
-                                    media[m].src = '';
-                                }
-                            } catch(e) {}
-                        }
-
-                        function esconderFaixa() {
-                            var faixa = document.getElementById('apk-faixa');
-                            if (faixa) {
-                                faixa.classList.add('hidden');
-                                faixa.style.setProperty('display', 'none', 'important');
-                            }
-                        }
-
-                        if (isUpdated) {
-                            esconderFaixa();
-                            try {
-                                var guardado = JSON.parse(localStorage.getItem('bvd:apk-release') || 'null');
-                                var marca = (guardado && guardado.marca) || '2026-11-04T21:14:21Z';
-                                localStorage.setItem('bvd:apk-visto', marca);
-                            } catch(e) {}
-                        }
-
-                        function hookBotoesApk() {
-                            var alvos = document.querySelectorAll('#btn-apk, #apk-faixa-baixar, a[href*=".apk"], a[href*="meu-filme-novo-debug.apk"]');
-                            for (var i = 0; i < alvos.length; i++) {
-                                var el = alvos[i];
-                                if (el.dataset.apkIntercepted) continue;
-                                el.dataset.apkIntercepted = '1';
-                                el.addEventListener('click', function(ev) {
-                                    ev.preventDefault();
-                                    ev.stopPropagation();
-                                    var link = this.getAttribute('href') || 'https://github.com/marao21/meu-filme-novo/releases/download/apk-latest/meu-filme-novo-debug.apk';
-                                    if (window.AndroidBridge && window.AndroidBridge.baixarAtualizacao) {
-                                        window.AndroidBridge.baixarAtualizacao(link);
-                                    }
-                                }, true);
-                            }
-                        }
-
-                        hookBotoesApk();
-                        setTimeout(hookBotoesApk, 500);
-                        setTimeout(hookBotoesApk, 1500);
-                        setTimeout(hookBotoesApk, 3000);
-
-                        if (isUpdated && window.MutationObserver) {
-                            var obs = new MutationObserver(function() {
-                                var f = document.getElementById('apk-faixa');
-                                if (f && (!f.classList.contains('hidden') || f.style.display !== 'none')) {
-                                    f.classList.add('hidden');
-                                    f.style.setProperty('display', 'none', 'important');
-                                }
-                            });
-                            obs.observe(document.body || document.documentElement, { childList: true, subtree: true, attributes: true });
-                        }
-                    } catch(e) {}
-                }
-
-                gerenciarAtualizacaoApk();
-                setTimeout(gerenciarAtualizacaoApk, 300);
-                setTimeout(gerenciarAtualizacaoApk, 1000);
-                setTimeout(gerenciarAtualizacaoApk, 2500);
-
                 // Listen for manual sign out / trocar login clicks
                 document.addEventListener('click', function(e) {
                     var btnConta = e.target.closest('#btn-conta, .menu-sair');
@@ -221,15 +135,6 @@ object InjectedJs {
                     if (formAuth) {
                         window.__userLoggedOut = false;
                         try { sessionStorage.removeItem('bvd:logged_out'); } catch(err) {}
-                    }
-
-                    // Open Native TV Search Keyboard when clicking the search magnifying glass or search input
-                    var btnBusca = e.target.closest('#btn-busca, .busca-lupa, #catalog-search');
-                    if (btnBusca) {
-                        if (window.AndroidBridge && window.AndroidBridge.onOpenTvSearchKeyboard) {
-                            var curVal = (document.getElementById('catalog-search') || {}).value || '';
-                            window.AndroidBridge.onOpenTvSearchKeyboard(curVal);
-                        }
                     }
                 }, true);
 
@@ -359,15 +264,6 @@ object InjectedJs {
                             return "menu_item_native";
                         }
 
-                        // If on search button or search input, open the TV Box On-Screen Search Keyboard
-                        if (cur && (cur.id === 'btn-busca' || cur.id === 'catalog-search' || (cur.closest && cur.closest('#busca')))) {
-                            if (window.AndroidBridge && window.AndroidBridge.onOpenTvSearchKeyboard) {
-                                var curVal = (document.getElementById('catalog-search') || {}).value || '';
-                                window.AndroidBridge.onOpenTvSearchKeyboard(curVal);
-                                return "search_keyboard_opened";
-                            }
-                        }
-
                         var detalhe = document.getElementById('detalhe');
                         var isDetalheOpen = detalhe && !detalhe.classList.contains('hidden') && detalhe.style.display !== 'none';
                         if (isDetalheOpen) {
@@ -396,7 +292,6 @@ object InjectedJs {
                             ':root { --bg: #0f172a; --bg-soft: #141f36; --panel: #18233c; --line: #1e293b; --line-soft: #243150; --text: #f1f5f9; --muted: #94a3b8; --accent: #38bdf8; --accent-strong: #0ea5e9; --hls: #a78bfa; --mp4: #34d399; --warn: #fbbf24; --danger: #f87171; }',
                             '#np-tempo, .np-tempo { outline: none !important; border: none !important; box-shadow: none !important; pointer-events: none !important; user-select: none !important; -webkit-user-select: none !important; }',
                             ':focus, #btn-menu:focus, .menu-item:focus, #detalhe-assistir:focus, .btn-assistir:focus, .np-bt:focus, .np-trilho:focus, #np-voltar:focus, #np-baixar:focus, [tabindex="0"]:focus, .card:focus, .filme-card:focus { outline: 3px solid #38bdf8 !important; outline-offset: 2px !important; }',
-                            '.tv-focused, .kind input:focus + span, .kind.tv-focused span, #btn-menu.tv-focused { outline: 3px solid #00E5FF !important; outline-offset: 2px !important; box-shadow: 0 0 16px rgba(0, 229, 255, 0.75) !important; border-radius: 999px !important; }',
                             '.menu-painel { background-color: #18233c !important; border: 1px solid #243150 !important; border-radius: 8px !important; box-shadow: 0 10px 25px rgba(5, 9, 18, 0.85) !important; padding: 6px !important; z-index: 99999 !important; }',
                             '.menu-item { color: #f1f5f9 !important; border-radius: 6px !important; }',
                             '.menu-item:focus, .menu-item:hover { background-color: #141f36 !important; color: #38bdf8 !important; }',
@@ -929,70 +824,8 @@ object InjectedJs {
                             if (menuBtn) {
                                 menuBtn.setAttribute('aria-expanded', 'false');
                                 menuBtn.focus();
-                                document.querySelectorAll('.tv-focused').forEach(function(el) { el.classList.remove('tv-focused'); });
-                                menuBtn.classList.add('tv-focused');
                             }
                             return "menu_closed";
-                        }
-
-                window.__updateSearchQuery = function(query) {
-                    try {
-                        var busca = document.getElementById('busca');
-                        var btnBusca = document.getElementById('btn-busca');
-                        var input = document.getElementById('catalog-search');
-                        if (busca) busca.classList.add('aberta');
-                        if (btnBusca) btnBusca.setAttribute('aria-expanded', 'true');
-                        if (input) {
-                            input.value = query;
-                            input.dispatchEvent(new Event('input', { bubbles: true }));
-                        }
-                    } catch(e) {}
-                };
-
-                window.__closeSearch = function() {
-                    try {
-                        var busca = document.getElementById('busca');
-                        var btnBusca = document.getElementById('btn-busca');
-                        var input = document.getElementById('catalog-search');
-                        if (busca) busca.classList.remove('aberta');
-                        if (btnBusca) {
-                            btnBusca.setAttribute('aria-expanded', 'false');
-                            btnBusca.focus();
-                        }
-                    } catch(e) {}
-                };
-
-                        // CASE 0.1: If search input is focused or open, close/clear search and focus on search button
-                        var busca = document.getElementById('busca');
-                        var searchInput = document.getElementById('catalog-search');
-                        if (searchInput && (document.activeElement === searchInput || (busca && busca.classList.contains('aberta')))) {
-                            if (busca) busca.classList.remove('aberta');
-                            searchInput.value = '';
-                            try { searchInput.dispatchEvent(new Event('input', { bubbles: true })); } catch(e) {}
-                            var btnBusca = document.getElementById('btn-busca');
-                            if (btnBusca) btnBusca.focus();
-                            return "search_closed";
-                        }
-
-                        // CASE 0.2: If genre dropdown is open, close it and focus on btn-generos
-                        var genreRow = document.getElementById('genre-row');
-                        if (genreRow && !genreRow.classList.contains('hidden')) {
-                            genreRow.classList.add('hidden');
-                            var btnGeneros = document.getElementById('btn-generos');
-                            if (btnGeneros) {
-                                btnGeneros.setAttribute('aria-expanded', 'false');
-                                btnGeneros.focus();
-                            }
-                            return "genres_closed";
-                        }
-
-                        // CASE 0.3: If episode picker is open
-                        var epPicker = document.getElementById('ep-picker');
-                        if (epPicker && !epPicker.classList.contains('hidden')) {
-                            var epCancel = document.getElementById('ep-cancel');
-                            if (epCancel) epCancel.click();
-                            else epPicker.classList.add('hidden');
-                            return "ep_picker_closed";
                         }
 
                         var sf = document.getElementById('site-frame');
@@ -1003,84 +836,26 @@ object InjectedJs {
                         var isNossoPlayerOpen = np && !np.classList.contains('hidden');
                         var isDetalheOpen = dt && !dt.classList.contains('hidden');
 
-                        // CASE 1: In server frame, Cloudflare verification, player loading (Retorna para a tela de áudio/detalhes)
+                        // CASE 1: In server frame, Cloudflare verification, player loading (IMAGE 1)
                         if (isFrameOpen || isNossoPlayerOpen || window.__isUserInServerFrame) {
                             window.__isUserInServerFrame = false;
                             window.__returnToMovieAudioSelection();
                             return "returned_to_detalhe";
                         }
 
-                        // CASE 2: On Movie Details page (IMAGEM 1: volta para a página principal / home IMAGEM 2)
+                        // CASE 2: On Movie Details / Mais Informações page (IMAGE 2)
                         if (isDetalheOpen || window.__isUserInMovie) {
                             window.__isUserInServerFrame = false;
                             window.__goToCatalog();
                             return "returned_to_catalog";
                         }
 
-                        // CASE 3: In the Home / Catalog page (IMAGEM 2)
-                        // Conforme pedido: se estiver na home (imagem 2), o botão Voltar deve voltar para
-                        // o cabeçalho (para o botão menu ou filme ou serie).
-                        var btnTodos = document.querySelector('.genre-chip[data-id=""]') || document.querySelector('.genre-chip');
-                        var activeGenreChip = document.querySelector('.genre-chip.is-on');
-                        if (activeGenreChip && activeGenreChip.dataset.id) {
-                            if (btnTodos) btnTodos.click();
-                            window.scrollTo({ top: 0, behavior: 'smooth' });
-                            var bg = document.getElementById('btn-generos');
-                            if (bg) bg.focus();
-                            return "category_cleared";
-                        }
-
-                        var active = document.activeElement;
-                        var isAtMenuBtn = (active && active.id === 'btn-menu');
-                        var isAtKindSwitch = (active && (active.name === 'cat-kind' || (active.closest && active.closest('.kind, .kind-switch'))));
-                        var isAtHeader = (active && (isAtMenuBtn || isAtKindSwitch || active.id === 'btn-busca' || active.id === 'btn-generos' || (active.closest && active.closest('.catalog-bar, .browser-bar, .sites-row'))));
-
-                        // Se o usuário está navegando no catálogo (em cartazes, destaques, ou rolou a página para baixo):
-                        // O botão voltar sobe a página e coloca o foco diretamente na aba ativa (Filmes ou Séries) do cabeçalho
-                        if (!isAtHeader) {
-                            window.scrollTo({ top: 0, behavior: 'smooth' });
-                            var activeKindInput = document.querySelector('input[name="cat-kind"]:checked') || document.querySelector('input[name="cat-kind"]');
-                            var target = activeKindInput || document.getElementById('btn-menu');
-                            if (target) {
-                                target.focus({ preventScroll: false });
-                                try {
-                                    target.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
-                                } catch(e) {}
-                                document.querySelectorAll('.tv-focused').forEach(function(el) { el.classList.remove('tv-focused'); });
-                                var parentLabel = target.closest('.kind') || target;
-                                parentLabel.classList.add('tv-focused');
-                            }
-                            return "focused_header";
-                        }
-
-                        // Se já está na aba Filmes / Séries, apertar voltar novamente vai para o botão Menu (☰ Menu)
-                        if (isAtKindSwitch) {
-                            var menuBtnEl = document.getElementById('btn-menu');
-                            if (menuBtnEl) {
-                                window.scrollTo({ top: 0, behavior: 'smooth' });
-                                menuBtnEl.focus({ preventScroll: false });
-                                document.querySelectorAll('.tv-focused').forEach(function(el) { el.classList.remove('tv-focused'); });
-                                menuBtnEl.classList.add('tv-focused');
-                                return "focused_menu";
-                            }
-                        }
-
-                        // Se já está no botão Menu (extremo superior esquerdo do cabeçalho), pronto para pedir confirmação de saída
-                        return "exit_prompt";
+                        // CASE 3: In the catalog
+                        return "in_catalog";
                     } catch(e) {
                         return "error";
                     }
                 };
-
-                document.addEventListener('focusin', function(e) {
-                    try {
-                        document.querySelectorAll('.tv-focused').forEach(function(el) {
-                            if (el !== e.target && !el.contains(e.target)) {
-                                el.classList.remove('tv-focused');
-                            }
-                        });
-                    } catch(e) {}
-                });
 
                 document.addEventListener('click', function(e) {
                     try {
@@ -1322,90 +1097,28 @@ object InjectedJs {
                     } catch(err) {}
                 }, true);
 
-                // Virtual TV Mouse Cursor helpers: allows TV box remote control to hover and click any element
-                window.__currentHoveredElement = null;
-                window.__moveVirtualCursor = function(clientX, clientY) {
-                    try {
-                        var el = document.elementFromPoint(clientX, clientY);
-                        if (el && el !== window.__currentHoveredElement) {
-                            if (window.__currentHoveredElement) {
-                                window.__currentHoveredElement.classList.remove('tv-mouse-hover');
-                                try {
-                                    window.__currentHoveredElement.dispatchEvent(new MouseEvent('mouseleave', { clientX: clientX, clientY: clientY, bubbles: true }));
-                                } catch(e) {}
-                            }
-                            window.__currentHoveredElement = el;
-                            el.classList.add('tv-mouse-hover');
-                            try {
-                                el.dispatchEvent(new MouseEvent('mouseenter', { clientX: clientX, clientY: clientY, bubbles: true }));
-                                el.dispatchEvent(new MouseEvent('mouseover', { clientX: clientX, clientY: clientY, bubbles: true }));
-                                el.dispatchEvent(new MouseEvent('mousemove', { clientX: clientX, clientY: clientY, bubbles: true }));
-                                if (typeof el.focus === 'function' && el.tabIndex >= 0) {
-                                    el.focus({ preventScroll: true });
-                                }
-                            } catch(e) {}
-                        } else if (el) {
-                            try {
-                                el.dispatchEvent(new MouseEvent('mousemove', { clientX: clientX, clientY: clientY, bubbles: true }));
-                            } catch(e) {}
-                        }
-                    } catch(err) {}
-                };
-
-                window.__clickVirtualCursor = function(clientX, clientY) {
-                    try {
-                        var el = document.elementFromPoint(clientX, clientY);
-                        if (el) {
-                            var clickable = el.closest('button, a, input, select, [role="button"], [onclick], .icon-btn, .panel-item, .skip, .play, .option') || el;
-                            try {
-                                clickable.dispatchEvent(new MouseEvent('mousedown', { clientX: clientX, clientY: clientY, bubbles: true, cancelable: true }));
-                                clickable.dispatchEvent(new MouseEvent('mouseup', { clientX: clientX, clientY: clientY, bubbles: true, cancelable: true }));
-                                clickable.click();
-                            } catch(e) {
-                                clickable.click();
-                            }
-                            return "clicked";
-                        }
-                    } catch(err) {}
-                    return "none";
-                };
-
                 function autoSelectFirstServerAndPlay() {
                     var attempts = 0;
-                    var maxAttempts = 40;
-                    var clickedServer = false;
-                    var playedVideo = false;
-
+                    var maxAttempts = 60;
                     var timer = setInterval(function() {
                         attempts++;
-                        if (attempts > maxAttempts || (clickedServer && playedVideo)) {
+                        if (attempts > maxAttempts) {
                             clearInterval(timer);
                             return;
                         }
                         try {
-                            // 1. Auto click Dublado or first server option
-                            if (!clickedServer) {
-                                var serverButtons = document.querySelectorAll(
-                                    '#optionList .option, #optionList > div, .panel-item, .option, [onclick*="player"], ' +
-                                    '#detalhe-acoes button:not(#detalhe-assistir):not(#detalhe-voltar), ' +
-                                    '.server-btn, .btn-server, [data-server], .server-item'
-                                );
-                                if (serverButtons && serverButtons.length > 0) {
-                                    var chosen = null;
-                                    for (var i = 0; i < serverButtons.length; i++) {
-                                        var s = serverButtons[i];
-                                        if (s && s.offsetParent !== null) {
-                                            var txt = (s.textContent || '').toLowerCase();
-                                            if (txt.indexOf('dub') !== -1 || txt.indexOf('dublado') !== -1) {
-                                                chosen = s;
-                                                break;
-                                            }
-                                            if (!chosen) chosen = s;
-                                        }
-                                    }
-                                    if (chosen) {
-                                        chosen.click();
-                                        clickedServer = true;
+                            // 1. Auto click first server button if displayed in DOM
+                            var serverButtons = document.querySelectorAll(
+                                '#optionList .option, #optionList > div, .option, [onclick*="player"], ' +
+                                '#detalhe-acoes button:not(#detalhe-assistir):not(#detalhe-voltar), ' +
+                                '.server-btn, .btn-server, [data-server], .server-item'
+                            );
+                            if (serverButtons && serverButtons.length > 0) {
+                                for (var i = 0; i < serverButtons.length; i++) {
+                                    var s = serverButtons[i];
+                                    if (s && s.offsetParent !== null) {
+                                        s.click();
+                                        break;
                                     }
                                 }
                             }
@@ -1416,46 +1129,28 @@ object InjectedJs {
                                 achamosTocar.click();
                             }
 
-                            // 3. Auto click skip ads if ad is playing
-                            var skipBtns = document.querySelectorAll(
-                                '[class*="skip" i], [id*="skip" i], .videoAdUiSkipButton, .vast-skip-button, .ytp-ad-skip-button, button.skip, .skip-btn'
+                            // 3. Auto click play button if web player is visible
+                            var playButtons = document.querySelectorAll(
+                                '.play-btn, .vjs-big-play-button, .jw-display-icon-container, [aria-label*="Play" i], button.play, #np-play'
                             );
-                            for (var sIdx = 0; sIdx < skipBtns.length; sIdx++) {
-                                var sb = skipBtns[sIdx];
-                                if (sb && sb.offsetParent !== null) {
-                                    sb.click();
+                            for (var j = 0; j < playButtons.length; j++) {
+                                var p = playButtons[j];
+                                if (p && p.offsetParent !== null) {
+                                    p.click();
                                 }
                             }
 
-                            // 4. Auto click play button if web player is visible
-                            if (!playedVideo) {
-                                var playButtons = document.querySelectorAll(
-                                    '.play-btn, .vjs-big-play-button, .jw-display-icon-container, [aria-label*="Play" i], button.play, #np-play'
-                                );
-                                for (var j = 0; j < playButtons.length; j++) {
-                                    var p = playButtons[j];
-                                    if (p && p.offsetParent !== null) {
-                                        p.click();
-                                        playedVideo = true;
-                                        break;
-                                    }
-                                }
-
-                                // Safely attempt play on the active visible video only once
-                                var visibleVideo = document.querySelector('video');
-                                if (visibleVideo && visibleVideo.paused && !visibleVideo.__autoPlayed && visibleVideo.id !== 'detalhe-trailer-video') {
-                                    visibleVideo.__autoPlayed = true;
-                                    visibleVideo.muted = false;
-                                    visibleVideo.play().then(function() {
-                                        playedVideo = true;
-                                    }).catch(function() {
-                                        visibleVideo.muted = true;
-                                        visibleVideo.play().catch(function(){});
-                                    });
+                            // 4. Auto play any paused video
+                            var videos = document.querySelectorAll('video');
+                            for (var k = 0; k < videos.length; k++) {
+                                var v = videos[k];
+                                if (v && v.paused && v.id !== 'detalhe-trailer-video') {
+                                    v.muted = false;
+                                    v.play().catch(function(){});
                                 }
                             }
                         } catch(e) {}
-                    }, 250);
+                    }, 100);
                 }
 
                 window.addEventListener('popstate', function() {
