@@ -80,6 +80,19 @@ class PlayerViewModel(
         _playerControlsTrigger.value = System.currentTimeMillis()
     }
 
+    private val _isMouseModeEnabled = MutableStateFlow(false)
+    val isMouseModeEnabled: StateFlow<Boolean> = _isMouseModeEnabled.asStateFlow()
+
+    fun setMouseModeEnabled(enabled: Boolean) {
+        _isMouseModeEnabled.value = enabled
+    }
+
+    fun toggleMouseMode(): Boolean {
+        val next = !_isMouseModeEnabled.value
+        _isMouseModeEnabled.value = next
+        return next
+    }
+
     private var positionTrackerJob: Job? = null
     private var autoQualityJob: Job? = null
     private var bufferingStartMs = 0L
