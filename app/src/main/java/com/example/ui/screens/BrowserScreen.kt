@@ -103,8 +103,7 @@ private const val APP_USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Pixel 8) App
 @Composable
 fun BrowserScreen(
     playerViewModel: PlayerViewModel,
-    onPlayStream: (StreamMedia) -> Unit,
-    onNavigateToDetected: () -> Unit,
+    onNavigateToDetected: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val repository = playerViewModel.repository
@@ -132,16 +131,12 @@ fun BrowserScreen(
 
     var isUserInMovie by remember { mutableStateOf(false) }
     var activeMovieTitle by remember { mutableStateOf<String?>(null) }
-    var latestBannerStream by remember { mutableStateOf<StreamMedia?>(null) }
-    var userRequestedWatch by remember { mutableStateOf(false) }
 
     // Helper for 1-click direct return to catalog
     val returnToCatalogInOneClick: () -> Unit = {
         playerViewModel.stopPlayback()
         isUserInMovie = false
-        userRequestedWatch = false
         activeMovieTitle = null
-        latestBannerStream = null
         repository.clearDetected()
         webViewInstance?.evaluateJavascript(
             """
@@ -188,30 +183,6 @@ fun BrowserScreen(
         )
     }
 
-    val isNativePlayerActive = playerViewModel.playerState.collectAsState().value.currentStream != null
-
-    // Silence any playing web video/audio whenever native player becomes active
-    LaunchedEffect(isNativePlayerActive) {
-        if (isNativePlayerActive) {
-            webViewInstance?.evaluateJavascript(
-                """
-                try {
-                    var videos = document.querySelectorAll('video');
-                    for (var i = 0; i < videos.length; i++) {
-                        videos[i].pause();
-                    }
-                    var np = document.getElementById('nosso-player');
-                    if (np) {
-                        var v = np.querySelector('video');
-                        if (v) v.pause();
-                    }
-                } catch(e) {}
-                """.trimIndent(),
-                null
-            )
-        }
-    }
-
     val playerState by playerViewModel.playerState.collectAsState()
 
     // Sync playback progress back to website's bvd:progresso so "Continuar assistindo" catalog row updates
@@ -233,26 +204,6 @@ fun BrowserScreen(
         }
     }
 
-    // Keep banner clean - only populated when user explicitly requested watch
-    LaunchedEffect(isUserInMovie, userRequestedWatch, detectedList) {
-        if (!isUserInMovie || !userRequestedWatch) {
-            latestBannerStream = null
-        }
-    }
-
-    // When genuine stream (>15m) arrives after user requested watch, auto-open immediately
-    LaunchedEffect(Unit) {
-        repository.newMovieAlert.collectLatest { stream ->
-            if (isUserInMovie && stream.isAbove15Min && stream.durationSeconds >= 900L) {
-                if (userRequestedWatch) {
-                    userRequestedWatch = false
-                    latestBannerStream = null
-                    onPlayStream(stream)
-                }
-            }
-        }
-    }
-
     val performBackNavigation: () -> Unit = {
         if (customFullscreenView != null) {
             customViewCallback?.onCustomViewHidden()
@@ -269,14 +220,10 @@ fun BrowserScreen(
                     }
                     "returned_to_detalhe" -> {
                         isUserInMovie = true
-                        userRequestedWatch = false
-                        latestBannerStream = null
                         repository.clearDetected()
                     }
                     "returned_to_catalog" -> {
                         isUserInMovie = false
-                        userRequestedWatch = false
-                        latestBannerStream = null
                         activeMovieTitle = null
                         repository.clearDetected()
                     }
@@ -314,8 +261,6 @@ fun BrowserScreen(
                     performBackNavigation()
                 }
                 PlayerViewModel.WebKeyAction.RETURN_TO_AUDIO_SELECTION -> {
-                    userRequestedWatch = false
-                    latestBannerStream = null
                     repository.clearDetected()
                     isUserInMovie = true
                     webViewInstance?.evaluateJavascript(
@@ -360,9 +305,8 @@ fun BrowserScreen(
         }
     }
 
-    // Back handling: only active when native player overlay is NOT active
-    // Follows strict 3-tier hierarchy: Server Frame / Cloudflare -> Movie Details (#detalhe) -> Catalog
-    BackHandler(enabled = !isNativePlayerActive) {
+    // Back handling: follows strict 3-tier hierarchy: Fullscreen -> Movie Details (#detalhe) -> Catalog -> Exit
+    BackHandler(enabled = true) {
         performBackNavigation()
     }
 
@@ -670,7 +614,6 @@ fun BrowserScreen(
                                 }
 
                                 fun handleAssistirClicked(title: String?, savedSec: Long) {
-                                    playerViewModel.stopPlayback()
                                     val clean = title?.trim()
                                     if (!clean.isNullOrEmpty() && !repository.isGenericTitle(clean)) {
                                         activeMovieTitle = clean
@@ -682,16 +625,6 @@ fun BrowserScreen(
                                         }
                                     }
                                     isUserInMovie = true
-                                    userRequestedWatch = true
-
-                                    val valid = repository.detectedStreams.value.firstOrNull { it.isAbove15Min && it.durationSeconds >= 900L }
-                                    if (valid != null) {
-                                        currentWebView.post {
-                                            userRequestedWatch = false
-                                            latestBannerStream = null
-                                            onPlayStream(valid)
-                                        }
-                                    }
                                 }
 
                                 @JavascriptInterface
@@ -741,9 +674,7 @@ fun BrowserScreen(
                                 fun onNavigatedToCatalog() {
                                     playerViewModel.stopPlayback()
                                     isUserInMovie = false
-                                    userRequestedWatch = false
                                     activeMovieTitle = null
-                                    latestBannerStream = null
                                     repository.clearDetected()
                                 }
                             }, "AndroidBridge")
@@ -762,7 +693,7 @@ fun BrowserScreen(
                                             return true
                                         }
 
-                                        // 2. Intercept video streams internally (ignore YouTube trailer streams)
+                                        // 2. Allow video streams to load in web player
                                         val isYouTube = lower.contains("youtube.com") || lower.contains("youtu.be") || lower.contains("googlevideo.com")
                                         if (!isYouTube && (lower.contains(".m3u8") || lower.contains(".mp4"))) {
                                             if (isUserInMovie) {
@@ -774,7 +705,7 @@ fun BrowserScreen(
                                                     userAgent = APP_USER_AGENT
                                                 )
                                             }
-                                            return true
+                                            return false
                                         }
 
                                         // 3. Block external popups, stores, and ad networks
@@ -872,7 +803,6 @@ fun BrowserScreen(
                                         if (url == DEFAULT_URL || url.contains("meufilme.vercel.app") || url.contains("filmemeu.vercel.app")) {
                                             isUserInMovie = false
                                             activeMovieTitle = null
-                                            latestBannerStream = null
                                             repository.clearDetected()
                                         }
                                     }
@@ -933,19 +863,6 @@ fun BrowserScreen(
                         }
                     },
                     modifier = Modifier.fillMaxSize()
-                )
-
-                // Detected Movie Banner at the bottom of the browser - only shown when inside a movie and stream has valid duration (> 15m)
-                // Commercials/ads with unknown duration are strictly excluded
-                DetectedStreamBanner(
-                    stream = if (isUserInMovie && latestBannerStream?.isAbove15Min == true && (latestBannerStream?.durationSeconds ?: 0L) >= 900L) latestBannerStream else null,
-                    onPlay = { stream ->
-                        onPlayStream(stream)
-                    },
-                    onDismiss = { latestBannerStream = null },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 12.dp)
                 )
             }
         }

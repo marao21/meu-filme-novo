@@ -213,6 +213,11 @@ object InjectedJs {
                 // Web Player Remote & Keyboard Controller - only used when called by the app
                 window.__toggleWebPlayerPlayPause = function() {
                     try {
+                        var npPlay = document.getElementById('np-play');
+                        if (npPlay) {
+                            npPlay.click();
+                            return "np_play_clicked";
+                        }
                         var videos = document.querySelectorAll('video');
                         for (var i = 0; i < videos.length; i++) {
                             var v = videos[i];
@@ -222,8 +227,7 @@ object InjectedJs {
                                     return "paused";
                                 } else {
                                     v.play().catch(function(){});
-                                    setTimeout(function() { triggerFullscreen(v); }, 180);
-                                    return "playing_fullscreen";
+                                    return "playing";
                                 }
                             }
                         }
@@ -1110,7 +1114,6 @@ object InjectedJs {
                             // 1. Auto click first server button if displayed in DOM
                             var serverButtons = document.querySelectorAll(
                                 '#optionList .option, #optionList > div, .option, [onclick*="player"], ' +
-                                '#detalhe-acoes button:not(#detalhe-assistir):not(#detalhe-voltar), ' +
                                 '.server-btn, .btn-server, [data-server], .server-item'
                             );
                             if (serverButtons && serverButtons.length > 0) {
