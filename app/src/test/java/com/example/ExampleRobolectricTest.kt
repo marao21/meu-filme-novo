@@ -162,4 +162,33 @@ class ExampleRobolectricTest {
     assertTrue(com.example.update.BaixarAtualizacao.isMandatoryBlocked(context))
     assertEquals(5, vInfo5.updatesBehind)
   }
+
+  @Test
+  fun `quality preference and adaptive auto quality controls`() {
+    val application = ApplicationProvider.getApplicationContext<android.app.Application>()
+    val viewModel = com.example.player.PlayerViewModel(application)
+
+    // Initial state is AUTO
+    assertEquals("AUTO", viewModel.playerState.value.selectedQualityPreference)
+
+    // Manual quality set to 720p
+    viewModel.setQualityPreference("720p")
+    assertEquals("720p", viewModel.playerState.value.selectedQualityPreference)
+    assertEquals("720p", viewModel.playerState.value.currentQualityLabel)
+
+    // Manual quality set to 480p
+    viewModel.setQualityPreference("480p")
+    assertEquals("480p", viewModel.playerState.value.selectedQualityPreference)
+    assertEquals("480p", viewModel.playerState.value.currentQualityLabel)
+
+    // Manual quality set to 360p
+    viewModel.setQualityPreference("360p")
+    assertEquals("360p", viewModel.playerState.value.selectedQualityPreference)
+    assertEquals("360p", viewModel.playerState.value.currentQualityLabel)
+
+    // Back to AUTO mode
+    viewModel.setQualityPreference("AUTO")
+    assertEquals("AUTO", viewModel.playerState.value.selectedQualityPreference)
+    assertTrue(viewModel.playerState.value.currentQualityLabel.startsWith("AUTO"))
+  }
 }
