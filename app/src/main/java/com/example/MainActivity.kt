@@ -17,6 +17,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Enable full sensor orientation so the system rotates automatically when the user rotates the device
+        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+
         // Keep TV Box screen on and retain primary input focus in app window
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.decorView.keepScreenOn = true
@@ -110,6 +113,13 @@ class MainActivity : ComponentActivity() {
             }
             KeyEvent.KEYCODE_MENU -> {
                 playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.TOGGLE_MENU)
+                return true
+            }
+            KeyEvent.KEYCODE_WINDOW,
+            KeyEvent.KEYCODE_TV_INPUT,
+            KeyEvent.KEYCODE_PROG_RED,
+            KeyEvent.KEYCODE_BUTTON_Y -> {
+                playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.TOGGLE_ROTATION)
                 return true
             }
             KeyEvent.KEYCODE_VOLUME_UP,

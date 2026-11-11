@@ -106,8 +106,10 @@ object BaixarAtualizacao {
      * a faixa de atualização não deve mais ficar aparecendo.
      */
     fun isAppAlreadyUpdated(context: Context): Boolean {
-        if (BuildConfig.VERSION_CODE >= 21) return true
+        val currentCode = BuildConfig.VERSION_CODE
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val cachedRemoteCode = prefs.getInt(KEY_CACHED_REMOTE_VERSION_CODE, currentCode)
+        if (currentCode >= cachedRemoteCode) return true
         return prefs.getBoolean(KEY_INSTALLED_V20, false)
     }
 

@@ -61,7 +61,7 @@ class ExampleRobolectricTest {
     repo.onStreamCandidate(
       url = "https://example.com/stream/movie.m3u8",
       pageTitle = "Baixar Vídeo Drama",
-      pageUrl = "https://filmemeu.vercel.app",
+      pageUrl = "https://filminhoflix.vercel.app",
       initialDurationSec = 5400L
     )
 
@@ -88,7 +88,7 @@ class ExampleRobolectricTest {
     repo.onStreamCandidate(
       url = "https://example.com/stream/full_movie.m3u8",
       pageTitle = "Hope",
-      pageUrl = "https://filmemeu.vercel.app",
+      pageUrl = "https://filminhoflix.vercel.app",
       initialDurationSec = 7200L
     )
 

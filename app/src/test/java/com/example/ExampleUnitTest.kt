@@ -35,6 +35,8 @@ class ExampleUnitTest {
           lower.startsWith("baixar vídeo") ||
           lower.startsWith("baixar video") ||
           lower == "filmemeu" ||
+          lower == "filminhoflix" ||
+          lower == "movflix" ||
           lower == "untitled" ||
           lower == "filme detectado" ||
           lower == "reproduzindo" ||
@@ -57,6 +59,8 @@ class ExampleUnitTest {
           lower.startsWith("baixar vídeo") ||
           lower.startsWith("baixar video") ||
           lower == "filmemeu" ||
+          lower == "filminhoflix" ||
+          lower == "movflix" ||
           lower == "untitled" ||
           lower == "filme detectado" ||
           lower == "reproduzindo" ||

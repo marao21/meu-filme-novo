@@ -63,7 +63,8 @@ class PlayerViewModel(
         DPAD_CENTER,
         RETURN_TO_AUDIO_SELECTION,
         HANDLE_BACK,
-        TOGGLE_MENU
+        TOGGLE_MENU,
+        TOGGLE_ROTATION
     }
 
     private val _webKeyEvents = kotlinx.coroutines.flow.MutableSharedFlow<WebKeyAction>(extraBufferCapacity = 1)
@@ -161,7 +162,7 @@ class PlayerViewModel(
             .setConnectTimeoutMs(8000)
             .setReadTimeoutMs(12000)
             .setUserAgent("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
-            .setDefaultRequestProperties(mapOf("Referer" to "https://filmemeu.vercel.app/"))
+            .setDefaultRequestProperties(mapOf("Referer" to "https://filminhoflix.vercel.app/"))
             .setTransferListener(bandwidthMeter)
 
         val errorHandlingPolicy = DefaultLoadErrorHandlingPolicy(5)

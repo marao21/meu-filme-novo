@@ -49,12 +49,16 @@ class StreamRepository(
             lower.startsWith("baixar vídeo") ||
             lower.startsWith("baixar video") ||
             lower == "filmemeu" ||
+            lower == "filminhoflix" ||
+            lower == "movflix" ||
             lower == "untitled" ||
             lower == "filme detectado" ||
             lower == "reproduzindo" ||
             lower == "site aberto" ||
             lower == "vídeo filmemeu" ||
             lower == "video filmemeu" ||
+            lower == "vídeo filminhoflix" ||
+            lower == "video filminhoflix" ||
             lower.length < 2
     }
 

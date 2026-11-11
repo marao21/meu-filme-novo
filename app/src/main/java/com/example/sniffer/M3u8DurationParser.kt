@@ -35,8 +35,8 @@ object M3u8DurationParser {
             val requestBuilder = Request.Builder().url(url)
             val ua = if (!userAgent.isNullOrBlank()) userAgent else "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 FilmeMeuApp/1.0"
             requestBuilder.header("User-Agent", ua)
-            requestBuilder.header("Referer", "https://filmemeu.vercel.app/")
-            requestBuilder.header("Origin", "https://filmemeu.vercel.app")
+            requestBuilder.header("Referer", "https://filminhoflix.vercel.app/")
+            requestBuilder.header("Origin", "https://filminhoflix.vercel.app")
 
             val response = client.newCall(requestBuilder.build()).execute()
             if (!response.isSuccessful) {

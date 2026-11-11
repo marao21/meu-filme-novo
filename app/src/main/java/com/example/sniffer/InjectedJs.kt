@@ -287,9 +287,12 @@ object InjectedJs {
                     return "none";
                 };
 
-                // Apply system theme colors and skip tempo focus
-                (function() {
+                // Apply system theme colors, skip tempo focus, and force 6 cards per row
+                function applyCustomThemeAndCardStyles() {
                     try {
+                        if (!document.head) return;
+                        var existing = document.getElementById('skip-tempo-style');
+                        if (existing) return;
                         var style = document.createElement('style');
                         style.id = 'skip-tempo-style';
                         style.textContent = [
@@ -301,16 +304,21 @@ object InjectedJs {
                             '.menu-item:focus, .menu-item:hover { background-color: #141f36 !important; color: #38bdf8 !important; }',
                             '#detalhe-assistir, .btn-assistir { background-color: #0ea5e9 !important; color: #0f172a !important; font-weight: bold !important; }',
                             '#nosso-player, .nosso-player { background: #0f172a !important; }',
-                            '.np-controles { background: linear-gradient(to top, rgba(5, 9, 18, 0.95), rgba(5, 9, 18, 0.6), transparent) !important; }'
+                            '.np-controles { background: linear-gradient(to top, rgba(5, 9, 18, 0.95), rgba(5, 9, 18, 0.6), transparent) !important; }',
+                            '/* Exibir 6 cards por fileira no catalogo e recomendacoes */',
+                            '.fileira-trilho, .fileira-trilho.fileira-trilho, .tv-mode .fileira-trilho, #fileiras .fileira-trilho, #busca-parecidos .fileira-trilho, .relacionados-trilho, .tv-mode .relacionados-trilho { --por-tela: 6 !important; --vao: 10px !important; gap: 10px !important; }',
+                            '.fileira-trilho > .cat-card, .fileira-trilho .cat-card, #fileiras .fileira-trilho .cat-card, .tv-mode .fileira-trilho .cat-card, .tv-mode .fileira-trilho > .cat-card, #busca-parecidos .fileira-trilho .cat-card, .relacionados-trilho .cat-card { flex: 0 0 calc((100% - 5 * 10px) / 6) !important; width: calc((100% - 5 * 10px) / 6) !important; max-width: calc((100% - 5 * 10px) / 6) !important; min-width: 0 !important; box-sizing: border-box !important; }',
+                            '@media (min-width: 600px), (orientation: landscape) { .catalog-grid, .tv-mode .catalog-grid { grid-template-columns: repeat(6, 1fr) !important; gap: 10px !important; } }',
+                            '@media (orientation: portrait) and (max-width: 480px) { .fileira-trilho, #fileiras .fileira-trilho { --por-tela: 3.2 !important; --vao: 8px !important; gap: 8px !important; } .fileira-trilho > .cat-card, .fileira-trilho .cat-card, #fileiras .fileira-trilho .cat-card { flex: 0 0 calc((100% - 2.2 * 8px) / 3.2) !important; width: calc((100% - 2.2 * 8px) / 3.2) !important; max-width: calc((100% - 2.2 * 8px) / 3.2) !important; } }'
                         ].join('\n');
-                        if (document.head && !document.getElementById('skip-tempo-style')) {
-                            document.head.appendChild(style);
-                        }
+                        document.head.appendChild(style);
                     } catch(e) {}
-                })();
+                }
+                applyCustomThemeAndCardStyles();
 
                 function cleanTempoFocus() {
                     try {
+                        applyCustomThemeAndCardStyles();
                         var t = document.getElementById('np-tempo') || document.querySelector('.np-tempo');
                         if (t) {
                             t.removeAttribute('tabindex');
@@ -508,7 +516,42 @@ object InjectedJs {
                                 nextTarget.focus();
                             }
                         }
-                    } catch(err) {}
+                // Screen Orientation API polyfill & bridge to native Android
+                try {
+                    if (window.screen && window.screen.orientation) {
+                        var origLock = window.screen.orientation.lock;
+                        window.screen.orientation.lock = function(type) {
+                            try {
+                                if (window.AndroidBridge && window.AndroidBridge.setOrientation) {
+                                    window.AndroidBridge.setOrientation(type);
+                                    return Promise.resolve();
+                                }
+                            } catch(e) {}
+                            return origLock ? origLock.apply(window.screen.orientation, arguments) : Promise.resolve();
+                        };
+                        window.screen.orientation.unlock = function() {
+                            try {
+                                if (window.AndroidBridge && window.AndroidBridge.setOrientation) {
+                                    window.AndroidBridge.setOrientation('auto');
+                                }
+                            } catch(e) {}
+                        };
+                    }
+                } catch(e) {}
+
+                // Listen for clicks on any website rotation button (matching user request)
+                document.addEventListener('click', function(e) {
+                    var rot = e.target.closest(
+                        '#btn-rotacao, .btn-rotacao, #btn-rotate, .btn-rotate, ' +
+                        '[aria-label*="rotat" i], [aria-label*="orientat" i], ' +
+                        '[title*="rotat" i], [title*="orientat" i], ' +
+                        '.rotacao, .rotate, .icon-rotate, [data-action*="rotat"]'
+                    );
+                    if (rot) {
+                        if (window.AndroidBridge && window.AndroidBridge.toggleOrientation) {
+                            window.AndroidBridge.toggleOrientation();
+                        }
+                    }
                 }, true);
 
                 // Block external links, ads, and popups (e.g. Shopee, market://, intent://)
@@ -567,6 +610,8 @@ object InjectedJs {
                            s.indexOf('baixar vídeo') === 0 ||
                            s.indexOf('baixar video') === 0 ||
                            s === 'filmemeu' ||
+                           s === 'filminhoflix' ||
+                           s === 'movflix' ||
                            s === 'untitled' ||
                            s === 'filme detectado' ||
                            s === 'reproduzindo' ||

@@ -22,10 +22,18 @@ import java.io.ByteArrayInputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.Charset
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -96,7 +104,7 @@ import com.example.ui.theme.TextSecondary
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
-private const val DEFAULT_URL = "https://filmemeu.vercel.app/"
+private const val DEFAULT_URL = "https://filminhoflix.vercel.app/"
 private const val APP_USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36"
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -253,6 +261,25 @@ fun BrowserScreen(
         }
     }
 
+    val toggleScreenOrientation: () -> Unit = {
+        val act = context as? android.app.Activity
+        if (act != null) {
+            val isLandscape = act.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+            val newOrientation = if (isLandscape) {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            } else {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            }
+            act.requestedOrientation = newOrientation
+            val msg = if (newOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
+                "Modo Paisagem (Horizontal)"
+            } else {
+                "Modo Retrato (Vertical)"
+            }
+            Toast.makeText(act, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     // Listen to remote control and keyboard actions targeting the web player
     LaunchedEffect(webViewInstance) {
         playerViewModel.webKeyEvents.collectLatest { action ->
@@ -297,6 +324,9 @@ fun BrowserScreen(
                         "if(window.__toggleMenu) { window.__toggleMenu(); }",
                         null
                     )
+                }
+                PlayerViewModel.WebKeyAction.TOGGLE_ROTATION -> {
+                    toggleScreenOrientation()
                 }
                 else -> {
                     // D-pad navigation handled naturally by WebView spatial navigation
@@ -677,6 +707,42 @@ fun BrowserScreen(
                                     activeMovieTitle = null
                                     repository.clearDetected()
                                 }
+
+                                @JavascriptInterface
+                                fun toggleOrientation() {
+                                    (context as? android.app.Activity)?.let { act ->
+                                        act.runOnUiThread {
+                                            toggleScreenOrientation()
+                                        }
+                                    }
+                                }
+
+                                @JavascriptInterface
+                                fun setOrientation(mode: String?) {
+                                    (context as? android.app.Activity)?.let { act ->
+                                        act.runOnUiThread {
+                                            when (mode?.lowercase()?.trim()) {
+                                                "landscape", "paisagem", "landscape-primary", "landscape-secondary" -> {
+                                                    act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                                }
+                                                "portrait", "retrato", "portrait-primary", "portrait-secondary" -> {
+                                                    act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                                                }
+                                                "auto", "sensor", "any" -> {
+                                                    act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+                                                }
+                                                else -> {
+                                                    toggleScreenOrientation()
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                @JavascriptInterface
+                                fun rotateScreen() {
+                                    toggleOrientation()
+                                }
                             }, "AndroidBridge")
 
                             webViewClient = object : WebViewClient() {
@@ -730,6 +796,7 @@ fun BrowserScreen(
 
                                         // 4. Strict whitelist: only stay in our app system and authorized embeds (e.g. YouTube trailers)
                                         val isAllowedSystem = host.isEmpty() ||
+                                            host.contains("filminhoflix") ||
                                             host.contains("meufilme") ||
                                             host.contains("filmemeu") ||
                                             host.contains("myembed") ||
@@ -800,7 +867,7 @@ fun BrowserScreen(
                                     if (url != null) {
                                         currentUrl = url
                                         inputUrl = url
-                                        if (url == DEFAULT_URL || url.contains("meufilme.vercel.app") || url.contains("filmemeu.vercel.app")) {
+                                        if (url == DEFAULT_URL || url.contains("filminhoflix.vercel.app") || url.contains("meufilme.vercel.app") || url.contains("filmemeu.vercel.app")) {
                                             isUserInMovie = false
                                             activeMovieTitle = null
                                             repository.clearDetected()
@@ -840,12 +907,14 @@ fun BrowserScreen(
                                 override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
                                     customFullscreenView = view
                                     customViewCallback = callback
+                                    (context as? android.app.Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                                 }
 
                                 override fun onHideCustomView() {
                                     customViewCallback?.onCustomViewHidden()
                                     customFullscreenView = null
                                     customViewCallback = null
+                                    (context as? android.app.Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
                                 }
 
                                 override fun onCreateWindow(
@@ -887,6 +956,48 @@ fun BrowserScreen(
                 },
                 modifier = Modifier.fillMaxSize()
             )
+        }
+
+        // Screen Rotation Button (matching image_45634bb7.png provided by user)
+        // Draggable floating button to comfortably toggle Portrait/Landscape anywhere
+        var dragOffsetX by remember { mutableFloatStateOf(0f) }
+        var dragOffsetY by remember { mutableFloatStateOf(0f) }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset { IntOffset(dragOffsetX.roundToInt(), dragOffsetY.roundToInt()) }
+                .padding(top = 16.dp, end = 16.dp)
+                .pointerInput(Unit) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        dragOffsetX += dragAmount.x
+                        dragOffsetY += dragAmount.y
+                    }
+                }
+        ) {
+            Surface(
+                onClick = { toggleScreenOrientation() },
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xDD1E2333),
+                border = BorderStroke(1.dp, Color(0xFF334155)),
+                shadowElevation = 8.dp,
+                modifier = Modifier
+                    .size(46.dp)
+                    .testTag("btn_rotate_screen")
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Icon(
+                        painter = painterResource(id = com.example.R.drawable.ic_screen_rotation_btn),
+                        contentDescription = "Girar Tela (Alternar Paisagem / Retrato)",
+                        tint = Color.White,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+            }
         }
     }
 
@@ -980,7 +1091,7 @@ private fun injectAutomationIntoEmbed(urlStr: String, request: WebResourceReques
             if (urlStr.contains("playerflix.ink")) {
                 setRequestProperty("Referer", "https://myembed.biz/")
             } else if (urlStr.contains("myembed.biz")) {
-                setRequestProperty("Referer", "https://filmemeu.vercel.app/")
+                setRequestProperty("Referer", "https://filminhoflix.vercel.app/")
             }
         }
 

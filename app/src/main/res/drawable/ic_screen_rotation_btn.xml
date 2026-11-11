@@ -1,0 +1,30 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Diamond/Tilted phone screen -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M 6.8,9.2 L 12.8,15.2 L 8.8,19.2 L 2.8,13.2 Z" />
+    <!-- Curved Rotation Arrow -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M 10.5,5.5 C 16,5.5 20,9.2 20,14.5 C 20,17.2 18.5,19.5 16.5,20.8" />
+    <!-- Arrowhead -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="0.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 12.5,2.2 L 8,5.8 L 12.5,9.4 Z" />
+</vector>
