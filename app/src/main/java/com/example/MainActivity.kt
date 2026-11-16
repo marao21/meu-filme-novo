@@ -17,10 +17,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Enable full sensor orientation so the system rotates automatically when the user rotates the device
+        // Gira junto com o aparelho: no celular isso importa, e na caixa de TV
+        // nao faz diferenca porque a tela nunca gira.
         requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
 
-        // Keep TV Box screen on and retain primary input focus in app window
+        // A caixa de TV apaga a tela por conta propria no meio do filme, e
+        // alguns lancadores roubam o foco do controle. As duas linhas abaixo
+        // seguram as duas coisas.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.decorView.keepScreenOn = true
         window.decorView.isFocusable = true
@@ -44,7 +47,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        // Prevent TV Box launcher or system UI from stealing remote control focus
+        // Impede o lancador da TV de ficar com o foco do controle remoto.
         if (!hasFocus) {
             window.decorView.post {
                 window.decorView.requestFocus()
@@ -52,83 +55,93 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * O que cada tecla do controle faz.
+     *
+     * Antes, com a interface sendo uma pagina dentro de um WebView, todas as
+     * teclas eram repassadas ao JavaScript e varias eram engolidas aqui -
+     * inclusive o Voltar. Isso fazia sentido quando quem desenhava a tela era
+     * a pagina.
+     *
+     * Agora quem desenha e o Compose, e engolir tecla e exatamente o que nao
+     * se pode fazer: as setas movem o foco, o OK abre, e o Voltar fecha a
+     * tela. Tudo isso o proprio sistema resolve, desde que a gente devolva
+     * `false` e deixe passar.
+     *
+     * Ficam para nos apenas as teclas de midia, que nao movem foco nenhum e
+     * precisam falar com o player: o controle da TV Box tem play, pause e os
+     * dois avancos, e sem isto eles nao fariam nada.
+     *
+     * O aviso ao navegador continua sendo emitido, porque a tela de reserva
+     * ainda e uma pagina e la dentro quem manda e ela. Emitir nao consome: a
+     * tecla segue o caminho dela.
+     */
     private fun handleRemoteKeyEvent(keyCode: Int, isDown: Boolean): Boolean {
-        if (!isDown) {
-            when (keyCode) {
-                KeyEvent.KEYCODE_VOLUME_UP,
-                KeyEvent.KEYCODE_VOLUME_DOWN,
-                KeyEvent.KEYCODE_VOLUME_MUTE -> return false
-                else -> return true
-            }
-        }
+        // So na descida da tecla. Agir na descida e na subida faz um toque
+        // valer dois, e o play viraria pausa no mesmo aperto.
+        if (!isDown) return false
+
+        avisarAReserva(keyCode)
 
         when (keyCode) {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
             KeyEvent.KEYCODE_MEDIA_PLAY,
             KeyEvent.KEYCODE_MEDIA_PAUSE -> {
-                playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.PLAY_PAUSE)
+                playerViewModel.togglePlayPause()
                 return true
             }
+
             KeyEvent.KEYCODE_MEDIA_REWIND,
             KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD,
             KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
-                playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.REWIND)
+                playerViewModel.seekBackward10s()
                 return true
             }
+
             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
             KeyEvent.KEYCODE_MEDIA_STEP_FORWARD,
             KeyEvent.KEYCODE_MEDIA_NEXT -> {
-                playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.FORWARD)
+                playerViewModel.seekForward10s()
                 return true
             }
+        }
+
+        // Setas, OK, Voltar, Menu e volume seguem para o sistema, que e quem
+        // sabe mover o foco e fechar tela.
+        return false
+    }
+
+    /** Repassa a tecla a tela de reserva, que ainda e uma pagina. */
+    private fun avisarAReserva(keyCode: Int) {
+        val acao = when (keyCode) {
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_PLAY,
+            KeyEvent.KEYCODE_MEDIA_PAUSE -> PlayerViewModel.WebKeyAction.PLAY_PAUSE
+
+            KeyEvent.KEYCODE_MEDIA_REWIND,
+            KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD,
+            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> PlayerViewModel.WebKeyAction.REWIND
+
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
+            KeyEvent.KEYCODE_MEDIA_STEP_FORWARD,
+            KeyEvent.KEYCODE_MEDIA_NEXT -> PlayerViewModel.WebKeyAction.FORWARD
+
             KeyEvent.KEYCODE_DPAD_CENTER,
             KeyEvent.KEYCODE_ENTER,
             KeyEvent.KEYCODE_NUMPAD_ENTER,
             KeyEvent.KEYCODE_BUTTON_A,
-            KeyEvent.KEYCODE_BUTTON_SELECT -> {
-                playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.DPAD_CENTER)
-                return false
-            }
-            KeyEvent.KEYCODE_DPAD_UP -> {
-                playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.DPAD_UP)
-                return false
-            }
-            KeyEvent.KEYCODE_DPAD_DOWN -> {
-                playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.DPAD_DOWN)
-                return false
-            }
-            KeyEvent.KEYCODE_DPAD_LEFT -> {
-                playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.DPAD_LEFT)
-                return false
-            }
-            KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.DPAD_RIGHT)
-                return false
-            }
-            KeyEvent.KEYCODE_BACK,
-            KeyEvent.KEYCODE_ESCAPE,
-            KeyEvent.KEYCODE_BUTTON_B -> {
-                playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.HANDLE_BACK)
-                return true
-            }
-            KeyEvent.KEYCODE_MENU -> {
-                playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.TOGGLE_MENU)
-                return true
-            }
-            KeyEvent.KEYCODE_WINDOW,
-            KeyEvent.KEYCODE_TV_INPUT,
-            KeyEvent.KEYCODE_PROG_RED,
-            KeyEvent.KEYCODE_BUTTON_Y -> {
-                playerViewModel.sendWebKeyAction(PlayerViewModel.WebKeyAction.TOGGLE_ROTATION)
-                return true
-            }
-            KeyEvent.KEYCODE_VOLUME_UP,
-            KeyEvent.KEYCODE_VOLUME_DOWN,
-            KeyEvent.KEYCODE_VOLUME_MUTE -> {
-                return false
-            }
+            KeyEvent.KEYCODE_BUTTON_SELECT -> PlayerViewModel.WebKeyAction.DPAD_CENTER
+
+            KeyEvent.KEYCODE_DPAD_UP -> PlayerViewModel.WebKeyAction.DPAD_UP
+            KeyEvent.KEYCODE_DPAD_DOWN -> PlayerViewModel.WebKeyAction.DPAD_DOWN
+            KeyEvent.KEYCODE_DPAD_LEFT -> PlayerViewModel.WebKeyAction.DPAD_LEFT
+            KeyEvent.KEYCODE_DPAD_RIGHT -> PlayerViewModel.WebKeyAction.DPAD_RIGHT
+
+            KeyEvent.KEYCODE_MENU -> PlayerViewModel.WebKeyAction.TOGGLE_MENU
+
+            else -> null
         }
-        return false
+        if (acao != null) playerViewModel.sendWebKeyAction(acao)
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -136,20 +149,6 @@ class MainActivity : ComponentActivity() {
             return true
         }
         return super.dispatchKeyEvent(event)
-    }
-
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (handleRemoteKeyEvent(keyCode, true)) {
-            return true
-        }
-        return super.onKeyDown(keyCode, event)
-    }
-
-    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
-        if (handleRemoteKeyEvent(keyCode, false)) {
-            return true
-        }
-        return super.onKeyUp(keyCode, event)
     }
 
     override fun onPause() {
