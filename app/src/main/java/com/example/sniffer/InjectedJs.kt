@@ -84,107 +84,6 @@ object InjectedJs {
                 // Auto-fill TMDB key
                 $tmdbInjection
 
-                // Auto visitor login & catalog unlock so #login-page never blocks the user on first launch,
-                // BUT if the user explicitly clicked "Sair", respect their wish so they can log in or switch accounts!
-                // CRITICAL: If the user already has an active account session, respect it and never force visitante mode!
-                function autoUnlockCatalog() {
-                    try {
-                        if (window.__userLoggedOut || sessionStorage.getItem('bvd:logged_out') === '1') {
-                            return;
-                        }
-                        var user = (window.bvdAuth && window.bvdAuth.usuarioAtual && window.bvdAuth.usuarioAtual());
-                        if (user) {
-                            try { localStorage.removeItem('bvd:visitante'); } catch(e) {}
-                            return;
-                        }
-                        localStorage.setItem('bvd:visitante', '1');
-                        localStorage.removeItem('bvd:place');
-                        var lp = document.getElementById('login-page');
-                        if (lp && !lp.classList.contains('hidden')) {
-                            var bv = document.getElementById('btn-visitante');
-                            if (bv) {
-                                bv.click();
-                            } else {
-                                lp.classList.add('hidden');
-                                document.documentElement.classList.remove('sem-conta', 'conferindo-conta');
-                                var cat = document.getElementById('catalog');
-                                if (cat) cat.classList.remove('hidden');
-                            }
-                        }
-                    } catch(e) {}
-                }
-                autoUnlockCatalog();
-                setTimeout(autoUnlockCatalog, 200);
-                setTimeout(autoUnlockCatalog, 600);
-                setTimeout(autoUnlockCatalog, 1500);
-
-                // Listen for manual sign out / trocar login clicks
-                document.addEventListener('click', function(e) {
-                    var btnConta = e.target.closest('#btn-conta, .menu-sair');
-                    if (btnConta) {
-                        window.__userLoggedOut = true;
-                        try { sessionStorage.setItem('bvd:logged_out', '1'); } catch(err) {}
-                        try { localStorage.removeItem('bvd:visitante'); } catch(err) {}
-                    }
-                    var btnVis = e.target.closest('#btn-visitante');
-                    if (btnVis) {
-                        window.__userLoggedOut = false;
-                        try { sessionStorage.removeItem('bvd:logged_out'); } catch(err) {}
-                    }
-                    var formAuth = e.target.closest('#form-auth, #form-login');
-                    if (formAuth) {
-                        window.__userLoggedOut = false;
-                        try { sessionStorage.removeItem('bvd:logged_out'); } catch(err) {}
-                    }
-                }, true);
-
-                // TV Box Menu Controller - smoothly opens/closes without double-click or accidental close
-                window.__menuOpenedAt = 0;
-                window.__toggleMenu = function() {
-                    try {
-                        var menuBtn = document.getElementById('btn-menu');
-                        var painel = document.getElementById('menu-painel');
-                        if (!menuBtn || !painel) return;
-                        var willOpen = painel.classList.contains('hidden');
-                        if (willOpen) {
-                            window.__menuOpenedAt = Date.now();
-                            painel.classList.remove('hidden');
-                            menuBtn.setAttribute('aria-expanded', 'true');
-                            // Delay focusing the first item so the remote's OK press doesn't accidentally trigger it!
-                            setTimeout(function() {
-                                if (painel && !painel.classList.contains('hidden')) {
-                                    var firstItem = painel.querySelector('.menu-item');
-                                    if (firstItem) {
-                                        firstItem.focus();
-                                    }
-                                }
-                            }, 250);
-                        } else {
-                            painel.classList.add('hidden');
-                            menuBtn.setAttribute('aria-expanded', 'false');
-                            menuBtn.focus();
-                        }
-                    } catch(e) {}
-                };
-
-                // Prevent accidental carryover clicks on menu items when pressing OK on #btn-menu
-                document.addEventListener('click', function(e) {
-                    var btnMenu = e.target.closest('#btn-menu, .menu-btn');
-                    if (btnMenu) {
-                        window.__menuOpenedAt = Date.now();
-                    }
-                    var menuItem = e.target.closest('.menu-item');
-                    if (menuItem) {
-                        var elapsed = Date.now() - (window.__menuOpenedAt || 0);
-                        if (elapsed < 450) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            e.stopImmediatePropagation();
-                            return false;
-                        }
-                    }
-                }, true);
-
                 // Helper to enter fullscreen
                 function triggerFullscreen(v) {
                     try {
@@ -213,11 +112,6 @@ object InjectedJs {
                 // Web Player Remote & Keyboard Controller - only used when called by the app
                 window.__toggleWebPlayerPlayPause = function() {
                     try {
-                        var npPlay = document.getElementById('np-play');
-                        if (npPlay) {
-                            npPlay.click();
-                            return "np_play_clicked";
-                        }
                         var videos = document.querySelectorAll('video');
                         for (var i = 0; i < videos.length; i++) {
                             var v = videos[i];
@@ -227,7 +121,8 @@ object InjectedJs {
                                     return "paused";
                                 } else {
                                     v.play().catch(function(){});
-                                    return "playing";
+                                    setTimeout(function() { triggerFullscreen(v); }, 180);
+                                    return "playing_fullscreen";
                                 }
                             }
                         }
@@ -247,78 +142,23 @@ object InjectedJs {
                     } catch(e) {}
                 };
 
-                // TV Remote & Keyboard Controller - OK and Navigation for TV Box
-                window.__handleTvRemoteOk = function() {
+                // Ensure #np-tempo (00:00 / 00:00) is NEVER focusable and always skipped
+                (function() {
                     try {
-                        var cur = document.activeElement;
-                        var painel = document.getElementById('menu-painel');
-                        var isMenuOpen = painel && !painel.classList.contains('hidden');
-
-                        // If on menu button, native click will handle it - do NOT duplicate toggle!
-                        if (cur && (cur.id === 'btn-menu' || cur.classList.contains('menu-btn'))) {
-                            return "btn_menu_native";
-                        }
-
-                        // If inside open menu panel, guard against accidental clicks during cooldown
-                        if (isMenuOpen && cur && cur.closest('#menu-painel')) {
-                            if (Date.now() - (window.__menuOpenedAt || 0) < 450) {
-                                return "menu_item_cooldown";
-                            }
-                            // Native key will activate it
-                            return "menu_item_native";
-                        }
-
-                        var detalhe = document.getElementById('detalhe');
-                        var isDetalheOpen = detalhe && !detalhe.classList.contains('hidden') && detalhe.style.display !== 'none';
-                        if (isDetalheOpen) {
-                            var btnAssistir = document.getElementById('detalhe-assistir') ||
-                                document.querySelector('#detalhe-assistir, .detalhe-assistir, #btn-play-filme');
-                            if (btnAssistir && (cur === btnAssistir || !cur || cur === document.body)) {
-                                btnAssistir.click();
-                                return "assistir_clicked";
-                            }
-                        }
-                        var npPlay = document.getElementById('np-play');
-                        if (npPlay && (cur === npPlay || cur.id === 'np-trilho')) {
-                            npPlay.click();
-                            return "np_play_clicked";
-                        }
-                    } catch(e) {}
-                    return "none";
-                };
-
-                // Apply system theme colors, skip tempo focus, and force 6 cards per row
-                function applyCustomThemeAndCardStyles() {
-                    try {
-                        if (!document.head) return;
-                        var existing = document.getElementById('skip-tempo-style');
-                        if (existing) return;
                         var style = document.createElement('style');
                         style.id = 'skip-tempo-style';
                         style.textContent = [
-                            ':root { --bg: #0f172a; --bg-soft: #141f36; --panel: #18233c; --line: #1e293b; --line-soft: #243150; --text: #f1f5f9; --muted: #94a3b8; --accent: #38bdf8; --accent-strong: #0ea5e9; --hls: #a78bfa; --mp4: #34d399; --warn: #fbbf24; --danger: #f87171; }',
                             '#np-tempo, .np-tempo { outline: none !important; border: none !important; box-shadow: none !important; pointer-events: none !important; user-select: none !important; -webkit-user-select: none !important; }',
-                            ':focus, #btn-menu:focus, .menu-item:focus, #detalhe-assistir:focus, .btn-assistir:focus, .np-bt:focus, .np-trilho:focus, #np-voltar:focus, #np-baixar:focus, [tabindex="0"]:focus, .card:focus, .filme-card:focus { outline: 3px solid #38bdf8 !important; outline-offset: 2px !important; }',
-                            '.menu-painel { background-color: #18233c !important; border: 1px solid #243150 !important; border-radius: 8px !important; box-shadow: 0 10px 25px rgba(5, 9, 18, 0.85) !important; padding: 6px !important; z-index: 99999 !important; }',
-                            '.menu-item { color: #f1f5f9 !important; border-radius: 6px !important; }',
-                            '.menu-item:focus, .menu-item:hover { background-color: #141f36 !important; color: #38bdf8 !important; }',
-                            '#detalhe-assistir, .btn-assistir { background-color: #0ea5e9 !important; color: #0f172a !important; font-weight: bold !important; }',
-                            '#nosso-player, .nosso-player { background: #0f172a !important; }',
-                            '.np-controles { background: linear-gradient(to top, rgba(5, 9, 18, 0.95), rgba(5, 9, 18, 0.6), transparent) !important; }',
-                            '/* Exibir 6 cards por fileira no catalogo e recomendacoes */',
-                            '.fileira-trilho, .fileira-trilho.fileira-trilho, .tv-mode .fileira-trilho, #fileiras .fileira-trilho, #busca-parecidos .fileira-trilho, .relacionados-trilho, .tv-mode .relacionados-trilho { --por-tela: 6 !important; --vao: 10px !important; gap: 10px !important; }',
-                            '.fileira-trilho > .cat-card, .fileira-trilho .cat-card, #fileiras .fileira-trilho .cat-card, .tv-mode .fileira-trilho .cat-card, .tv-mode .fileira-trilho > .cat-card, #busca-parecidos .fileira-trilho .cat-card, .relacionados-trilho .cat-card { flex: 0 0 calc((100% - 5 * 10px) / 6) !important; width: calc((100% - 5 * 10px) / 6) !important; max-width: calc((100% - 5 * 10px) / 6) !important; min-width: 0 !important; box-sizing: border-box !important; }',
-                            '@media (min-width: 600px), (orientation: landscape) { .catalog-grid, .tv-mode .catalog-grid { grid-template-columns: repeat(6, 1fr) !important; gap: 10px !important; } }',
-                            '@media (orientation: portrait) and (max-width: 480px) { .fileira-trilho, #fileiras .fileira-trilho { --por-tela: 3.2 !important; --vao: 8px !important; gap: 8px !important; } .fileira-trilho > .cat-card, .fileira-trilho .cat-card, #fileiras .fileira-trilho .cat-card { flex: 0 0 calc((100% - 2.2 * 8px) / 3.2) !important; width: calc((100% - 2.2 * 8px) / 3.2) !important; max-width: calc((100% - 2.2 * 8px) / 3.2) !important; } }'
+                            '.np-bt:focus, .np-trilho:focus, #np-voltar:focus, #np-baixar:focus { outline: 3px solid #ffb300 !important; outline-offset: 2px !important; }'
                         ].join('\n');
-                        document.head.appendChild(style);
+                        if (document.head && !document.getElementById('skip-tempo-style')) {
+                            document.head.appendChild(style);
+                        }
                     } catch(e) {}
-                }
-                applyCustomThemeAndCardStyles();
+                })();
 
                 function cleanTempoFocus() {
                     try {
-                        applyCustomThemeAndCardStyles();
                         var t = document.getElementById('np-tempo') || document.querySelector('.np-tempo');
                         if (t) {
                             t.removeAttribute('tabindex');
@@ -326,31 +166,6 @@ object InjectedJs {
                             if (document.activeElement === t) {
                                 var next = document.getElementById('np-trilho') || document.getElementById('np-play');
                                 if (next) next.focus();
-                            }
-                        }
-                        // Ensure #detalhe-assistir is focusable on TV Box
-                        var dt = document.getElementById('detalhe');
-                        if (dt && !dt.classList.contains('hidden')) {
-                            var btn = document.getElementById('detalhe-assistir');
-                            if (btn && !btn.hasAttribute('tabindex')) {
-                                btn.setAttribute('tabindex', '0');
-                            }
-                            var dtTitle = document.getElementById('detalhe-titulo');
-                            if (dtTitle && dtTitle.textContent && dtTitle.textContent.trim() && !isGenericTitle(dtTitle.textContent)) {
-                                var dtFundo = document.getElementById('detalhe-fundo');
-                                var dtMeta = document.getElementById('detalhe-meta');
-                                var dtSin = document.getElementById('detalhe-sinopse');
-                                var dtEp = document.getElementById('detalhe-episodio');
-                                var rel = document.getElementById('relacionados');
-                                window.__savedMovieDetail = {
-                                    titulo: dtTitle.textContent.trim(),
-                                    meta: dtMeta ? dtMeta.textContent.trim() : '',
-                                    sinopse: dtSin ? dtSin.textContent.trim() : '',
-                                    fundo: dtFundo ? dtFundo.style.backgroundImage : '',
-                                    episodioHtml: dtEp ? dtEp.innerHTML : '',
-                                    episodioHidden: dtEp ? dtEp.classList.contains('hidden') : true,
-                                    relacionadosHtml: rel ? rel.innerHTML : ''
-                                };
                             }
                         }
                     } catch(e) {}
@@ -370,33 +185,6 @@ object InjectedJs {
                         var isLeft = (key === 'ArrowLeft' || code === 37);
                         var isUp = (key === 'ArrowUp' || code === 38);
                         var isDown = (key === 'ArrowDown' || code === 40);
-
-                        // If menu-painel is open, handle TV remote navigation inside it smoothly
-                        var painel = document.getElementById('menu-painel');
-                        if (painel && !painel.classList.contains('hidden')) {
-                            var menuItems = Array.prototype.slice.call(painel.querySelectorAll('.menu-item'));
-                            var currentIdx = menuItems.indexOf(cur);
-                            if (isDown && menuItems.length > 0) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                var nextIdx = currentIdx >= 0 ? (currentIdx + 1) % menuItems.length : 0;
-                                menuItems[nextIdx].focus();
-                                return;
-                            }
-                            if (isUp && menuItems.length > 0) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                var prevIdx = currentIdx > 0 ? (currentIdx - 1) : (menuItems.length - 1);
-                                menuItems[prevIdx].focus();
-                                return;
-                            }
-                            if (isLeft || key === 'Escape' || code === 27) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                window.__toggleMenu();
-                                return;
-                            }
-                        }
 
                         // If user is on np-play and presses Right -> skip np-tempo, jump straight to np-trilho (slider)!
                         if (cur.id === 'np-play' && isRight) {
@@ -516,42 +304,7 @@ object InjectedJs {
                                 nextTarget.focus();
                             }
                         }
-                // Screen Orientation API polyfill & bridge to native Android
-                try {
-                    if (window.screen && window.screen.orientation) {
-                        var origLock = window.screen.orientation.lock;
-                        window.screen.orientation.lock = function(type) {
-                            try {
-                                if (window.AndroidBridge && window.AndroidBridge.setOrientation) {
-                                    window.AndroidBridge.setOrientation(type);
-                                    return Promise.resolve();
-                                }
-                            } catch(e) {}
-                            return origLock ? origLock.apply(window.screen.orientation, arguments) : Promise.resolve();
-                        };
-                        window.screen.orientation.unlock = function() {
-                            try {
-                                if (window.AndroidBridge && window.AndroidBridge.setOrientation) {
-                                    window.AndroidBridge.setOrientation('auto');
-                                }
-                            } catch(e) {}
-                        };
-                    }
-                } catch(e) {}
-
-                // Listen for clicks on any website rotation button (matching user request)
-                document.addEventListener('click', function(e) {
-                    var rot = e.target.closest(
-                        '#btn-rotacao, .btn-rotacao, #btn-rotate, .btn-rotate, ' +
-                        '[aria-label*="rotat" i], [aria-label*="orientat" i], ' +
-                        '[title*="rotat" i], [title*="orientat" i], ' +
-                        '.rotacao, .rotate, .icon-rotate, [data-action*="rotat"]'
-                    );
-                    if (rot) {
-                        if (window.AndroidBridge && window.AndroidBridge.toggleOrientation) {
-                            window.AndroidBridge.toggleOrientation();
-                        }
-                    }
+                    } catch(err) {}
                 }, true);
 
                 // Block external links, ads, and popups (e.g. Shopee, market://, intent://)
@@ -610,8 +363,6 @@ object InjectedJs {
                            s.indexOf('baixar vídeo') === 0 ||
                            s.indexOf('baixar video') === 0 ||
                            s === 'filmemeu' ||
-                           s === 'filminhoflix' ||
-                           s === 'movflix' ||
                            s === 'untitled' ||
                            s === 'filme detectado' ||
                            s === 'reproduzindo' ||
@@ -667,20 +418,9 @@ object InjectedJs {
                             }
                         }
 
+                        // detalheVisible is true when viewing the movie synopsis, poster, and trailer
                         var inMovie = frameVisible || npVisible || detalheVisible;
-                        var inCatalog = catalogVisible && !frameVisible && !npVisible && !detalheVisible;
-
-                        // Safety check: if neither catalog nor movie is marked visible but user was in a movie,
-                        // prevent black screen void by restoring detalhe!
-                        if (!inCatalog && !inMovie && window.__isUserInMovie && window.__savedMovieDetail) {
-                            var dtSafe = document.getElementById('detalhe');
-                            if (dtSafe) {
-                                dtSafe.classList.remove('hidden');
-                                document.documentElement.classList.add('no-titulo');
-                                detalheVisible = true;
-                                inMovie = true;
-                            }
-                        }
+                        var inCatalog = catalogVisible && !frameVisible && !npVisible && !detalheVisible && !htmlNoTitulo;
 
                         if (inCatalog) {
                             if (window.__isUserInMovie || !window.__isUserInCatalog) {
@@ -708,99 +448,52 @@ object InjectedJs {
 
                 window.__returnToMovieAudioSelection = function() {
                     try {
-                        var sf = document.getElementById('site-frame');
                         var np = document.getElementById('nosso-player');
-                        var hadPlayerOpen = (sf && !sf.classList.contains('hidden')) || (np && !np.classList.contains('hidden'));
-
-                        // Let the site's popstate run if player frame was active
-                        if (hadPlayerOpen) {
-                            try {
-                                window.dispatchEvent(new PopStateEvent('popstate'));
-                            } catch(e) {}
+                        if (np) {
+                            np.classList.add('hidden');
+                            var v = np.querySelector('video');
+                            if (v) { v.pause(); v.src = ''; }
                         }
-
-                        function applyDetalheRestore() {
-                            try {
-                                if (np) {
-                                    np.classList.add('hidden');
-                                    var v = np.querySelector('video');
-                                    if (v) { v.pause(); v.src = ''; }
-                                }
-                                if (sf) {
-                                    sf.classList.add('hidden');
-                                    var ifr = sf.querySelector('iframe');
-                                    if (ifr) {
-                                        try { ifr.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*'); } catch(e){}
-                                        ifr.src = 'about:blank';
-                                    }
-                                }
-
-                                var cat = document.getElementById('catalog');
-                                if (cat) cat.classList.add('hidden');
-
-                                var dt = document.getElementById('detalhe');
-                                if (dt) {
-                                    dt.classList.remove('hidden');
-                                }
-                                document.documentElement.classList.add('no-titulo');
-
-                                if (window.__savedMovieDetail) {
-                                    var s = window.__savedMovieDetail;
-                                    var dtTitle = document.getElementById('detalhe-titulo');
-                                    if (dtTitle && (!dtTitle.textContent || !dtTitle.textContent.trim())) {
-                                        dtTitle.textContent = s.titulo || '';
-                                    }
-                                    var dtMeta = document.getElementById('detalhe-meta');
-                                    if (dtMeta && (!dtMeta.textContent || !dtMeta.textContent.trim())) {
-                                        dtMeta.textContent = s.meta || '';
-                                    }
-                                    var dtSin = document.getElementById('detalhe-sinopse');
-                                    if (dtSin && (!dtSin.textContent || !dtSin.textContent.trim())) {
-                                        dtSin.textContent = s.sinopse || '';
-                                    }
-                                    var dtFundo = document.getElementById('detalhe-fundo');
-                                    if (dtFundo && (!dtFundo.style.backgroundImage || dtFundo.style.backgroundImage === 'none')) {
-                                        dtFundo.style.backgroundImage = s.fundo || '';
-                                    }
-                                    var dtEp = document.getElementById('detalhe-episodio');
-                                    if (dtEp && s.episodioHtml && !dtEp.children.length) {
-                                        dtEp.innerHTML = s.episodioHtml;
-                                        if (s.episodioHidden) dtEp.classList.add('hidden'); else dtEp.classList.remove('hidden');
-                                    }
-                                    var rel = document.getElementById('relacionados');
-                                    if (rel && s.relacionadosHtml && !rel.children.length) {
-                                        rel.innerHTML = s.relacionadosHtml;
-                                        rel.classList.remove('hidden');
-                                    }
-                                }
-
-                                var btnAssistir = document.getElementById('detalhe-assistir');
-                                if (btnAssistir) {
-                                    btnAssistir.focus();
-                                }
-
-                                window.__isUserInMovie = true;
-                                window.__isUserInCatalog = false;
-
-                                var title = (document.getElementById('detalhe-titulo') || {}).textContent || window.__currentMovieTitle;
-                                if (window.AndroidBridge && window.AndroidBridge.onMovieStateChanged) {
-                                    window.AndroidBridge.onMovieStateChanged(true, title || '');
-                                }
-                            } catch(err) {}
+                        var sf = document.getElementById('site-frame');
+                        if (sf) {
+                            sf.classList.add('hidden');
+                            var ifr = sf.querySelector('iframe');
+                            if (ifr) ifr.src = 'about:blank';
                         }
+                        var dt = document.getElementById('detalhe');
+                        if (dt) {
+                            dt.classList.remove('hidden');
+                        }
+                        var cat = document.getElementById('catalog');
+                        if (cat) {
+                            cat.classList.add('hidden');
+                        }
+                        document.documentElement.classList.add('no-titulo');
 
-                        applyDetalheRestore();
-                        setTimeout(applyDetalheRestore, 50);
-                        setTimeout(applyDetalheRestore, 150);
-                        setTimeout(applyDetalheRestore, 300);
-                        setTimeout(applyDetalheRestore, 600);
+                        window.__isUserInMovie = true;
+                        window.__isUserInCatalog = false;
+
+                        var dtTitle = document.getElementById('detalhe-titulo');
+                        var title = (dtTitle && dtTitle.textContent) ? dtTitle.textContent.trim() : window.__currentMovieTitle;
+                        if (window.AndroidBridge && window.AndroidBridge.onMovieStateChanged) {
+                            window.AndroidBridge.onMovieStateChanged(true, title);
+                        }
                     } catch(e) {}
                 };
 
                 window.__goToCatalog = function() {
                     try {
-                        localStorage.removeItem('bvd:place');
-                        localStorage.setItem('bvd:visitante', '1');
+                        if (typeof voltarParaCatalogo === 'function') {
+                            try { voltarParaCatalogo(false); } catch(e) {}
+                        }
+                        var btns = [
+                            document.getElementById('btn-catalog'),
+                            document.getElementById('detalhe-voltar'),
+                            document.querySelector('.btn-voltar')
+                        ];
+                        btns.forEach(function(b) {
+                            if (b) { try { b.click(); } catch(e) {} }
+                        });
 
                         var sf = document.getElementById('site-frame');
                         if (sf) {
@@ -815,104 +508,33 @@ object InjectedJs {
                             if (v) { v.pause(); v.src = ''; }
                         }
                         var dt = document.getElementById('detalhe');
-                        if (dt) {
-                            dt.classList.add('hidden');
-                            var tr = document.getElementById('detalhe-trailer');
-                            if (tr) tr.textContent = '';
-                        }
-                        var rel = document.getElementById('relacionados');
-                        if (rel) {
-                            rel.classList.add('hidden');
-                            rel.textContent = '';
-                        }
-                        var prev = document.getElementById('previa');
-                        if (prev) prev.classList.add('hidden');
-
-                        var lp = document.getElementById('login-page');
-                        if (lp) lp.classList.add('hidden');
-
-                        document.documentElement.classList.remove('no-titulo');
-                        document.documentElement.classList.remove('sem-conta');
-                        document.documentElement.classList.remove('conferindo-conta');
-                        document.documentElement.classList.add('pagina-livre');
+                        if (dt) dt.classList.add('hidden');
 
                         var cat = document.getElementById('catalog');
                         if (cat) cat.classList.remove('hidden');
 
-                        var fil = document.getElementById('fileiras');
-                        if (fil) fil.classList.remove('hidden');
-
-                        var cg = document.getElementById('catalog-grid');
-                        if (cg) cg.classList.remove('hidden');
-
-                        var catKind = document.querySelector('input[name="cat-kind"]:checked') || document.querySelector('input[name="cat-kind"]');
-                        if (catKind) {
-                            try { catKind.dispatchEvent(new Event('change', { bubbles: true })); } catch(e) {}
-                        }
+                        document.documentElement.classList.remove('no-titulo');
 
                         window.__isUserInMovie = false;
                         window.__isUserInCatalog = true;
-                        window.__isUserInServerFrame = false;
                         window.__currentMovieTitle = null;
 
                         if (window.AndroidBridge && window.AndroidBridge.onNavigatedToCatalog) {
                             window.AndroidBridge.onNavigatedToCatalog();
                         }
-
-                        window.scrollTo({ top: 0, behavior: 'auto' });
                     } catch(e) {}
-                };
-
-                window.__handleBackNavigation = function() {
-                    try {
-                        // CASE 0: If menu-painel is open, dismiss the menu panel cleanly
-                        var painel = document.getElementById('menu-painel');
-                        if (painel && !painel.classList.contains('hidden')) {
-                            painel.classList.add('hidden');
-                            var menuBtn = document.getElementById('btn-menu');
-                            if (menuBtn) {
-                                menuBtn.setAttribute('aria-expanded', 'false');
-                                menuBtn.focus();
-                            }
-                            return "menu_closed";
-                        }
-
-                        var sf = document.getElementById('site-frame');
-                        var np = document.getElementById('nosso-player');
-                        var dt = document.getElementById('detalhe');
-
-                        var isFrameOpen = sf && !sf.classList.contains('hidden');
-                        var isNossoPlayerOpen = np && !np.classList.contains('hidden');
-                        var isDetalheOpen = dt && !dt.classList.contains('hidden');
-
-                        // CASE 1: In server frame, Cloudflare verification, player loading (IMAGE 1)
-                        if (isFrameOpen || isNossoPlayerOpen || window.__isUserInServerFrame) {
-                            window.__isUserInServerFrame = false;
-                            window.__returnToMovieAudioSelection();
-                            return "returned_to_detalhe";
-                        }
-
-                        // CASE 2: On Movie Details / Mais Informações page (IMAGE 2)
-                        if (isDetalheOpen || window.__isUserInMovie) {
-                            window.__isUserInServerFrame = false;
-                            window.__goToCatalog();
-                            return "returned_to_catalog";
-                        }
-
-                        // CASE 3: In the catalog
-                        return "in_catalog";
-                    } catch(e) {
-                        return "error";
-                    }
                 };
 
                 document.addEventListener('click', function(e) {
                     try {
-                        var toCatalog = e.target.closest('#btn-catalog, #detalhe-voltar, .detalhe-voltar');
+                        var toCatalog = e.target.closest('#btn-catalog, #detalhe-voltar');
                         if (toCatalog) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            window.__goToCatalog();
+                            window.__isUserInMovie = false;
+                            window.__isUserInCatalog = true;
+                            window.__currentMovieTitle = null;
+                            if (window.AndroidBridge && window.AndroidBridge.onNavigatedToCatalog) {
+                                window.AndroidBridge.onNavigatedToCatalog();
+                            }
                             return;
                         }
 
@@ -929,277 +551,35 @@ object InjectedJs {
                             return;
                         }
 
-                        function getBestSavedProgress(title, tmdbId) {
-                            try {
-                                var clean = (title || '').trim().toLowerCase();
-                                var id = tmdbId || (window.__activeMovieMeta ? window.__activeMovieMeta.tmdb_id : '');
-                                var raw = localStorage.getItem('bvd:progresso');
-                                if (raw) {
-                                    var map = JSON.parse(raw);
-                                    if (map && typeof map === 'object') {
-                                        if (id) {
-                                            var direct = map['filme:' + id] || map['serie:' + id] || map[id];
-                                            if (direct && typeof direct.segundo === 'number' && direct.segundo > 10) {
-                                                return Math.round(direct.segundo);
-                                            }
-                                        }
-                                        if (clean) {
-                                            for (var k in map) {
-                                                var entry = map[k];
-                                                if (!entry) continue;
-                                                var entryTitle = (entry.titulo || entry.title || '').trim().toLowerCase();
-                                                if (entryTitle && (entryTitle === clean || entryTitle.indexOf(clean) !== -1 || clean.indexOf(entryTitle) !== -1)) {
-                                                    if (typeof entry.segundo === 'number' && entry.segundo > 10) {
-                                                        return Math.round(entry.segundo);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            } catch(e) {}
-                            return 0;
-                        }
-
-                        function queryAndReportSavedProgress(title, tmdbId) {
-                            try {
-                                if (!title || isGenericTitle(title)) return;
-                                var clean = title.trim();
-                                var id = tmdbId || (window.__activeMovieMeta ? window.__activeMovieMeta.tmdb_id : '');
-
-                                // 1. Immediate local storage check
-                                var localSec = getBestSavedProgress(clean, id);
-                                if (localSec > 10 && window.AndroidBridge && window.AndroidBridge.onCloudProgressLoaded) {
-                                    window.AndroidBridge.onCloudProgressLoaded(clean, localSec, 0);
-                                }
-
-                                // 2. Supabase cloud check for cross-device sync
-                                if (window.bvdAuth && window.bvdAuth.cliente && window.bvdAuth.usuarioAtual) {
-                                    var usuario = window.bvdAuth.usuarioAtual();
-                                    if (usuario && usuario.id) {
-                                        var query = window.bvdAuth.cliente.from('progresso').select('segundo, duracao, titulo, tmdb_id');
-                                        if (id) {
-                                            query = query.eq('tmdb_id', id);
-                                        } else {
-                                            query = query.ilike('titulo', '%' + clean + '%');
-                                        }
-                                        query.maybeSingle().then(function(res) {
-                                            if (res && res.data && res.data.segundo && res.data.segundo > 10) {
-                                                var cloudSec = Math.round(res.data.segundo);
-                                                var cloudDur = Math.round(res.data.duracao || 0);
-                                                if (window.AndroidBridge && window.AndroidBridge.onCloudProgressLoaded) {
-                                                    window.AndroidBridge.onCloudProgressLoaded(clean, cloudSec, cloudDur);
-                                                }
-                                            }
-                                        }).catch(function(err) {});
-                                    }
-                                }
-                            } catch(e) {}
-                        }
-
-                        window.__syncProgressToWeb = function(title, second, duration) {
-                            try {
-                                if (!title || second <= 0) return;
-                                var clean = title.trim();
-                                var lower = clean.toLowerCase();
-                                var id = (window.__activeMovieMeta ? window.__activeMovieMeta.tmdb_id : '') || '';
-                                var kind = (window.__activeMovieMeta ? window.__activeMovieMeta.kind : 'filme') || 'filme';
-                                var poster = (window.__activeMovieMeta ? window.__activeMovieMeta.poster : '') || '';
-                                var backdrop = (window.__activeMovieMeta ? window.__activeMovieMeta.backdrop : '') || '';
-
-                                // 1. Local storage bvd:progresso
-                                var raw = localStorage.getItem('bvd:progresso') || '{}';
-                                var map = {};
-                                try { map = JSON.parse(raw) || {}; } catch(err) { map = {}; }
-                                var targetKey = id ? (kind + ':' + id) : null;
-                                if (!targetKey) {
-                                    for (var k in map) {
-                                        var it = map[k];
-                                        if (it && (it.titulo || it.title || '').trim().toLowerCase() === lower) {
-                                            targetKey = k;
-                                            break;
-                                        }
-                                    }
-                                }
-                                if (!targetKey) {
-                                    targetKey = 'filme:' + encodeURIComponent(lower.replace(/[^a-z0-9]/g, '_'));
-                                }
-                                var existing = map[targetKey] || {};
-                                var dur = duration > 0 ? duration : (existing.duracao || 7200);
-                                var acabou = dur > 0 && (second / dur >= 0.90);
-                                map[targetKey] = {
-                                    segundo: Math.round(second),
-                                    duracao: Math.round(dur),
-                                    titulo: existing.titulo || clean,
-                                    poster: poster || existing.poster || '',
-                                    backdrop: backdrop || existing.backdrop || '',
-                                    terminou: acabou,
-                                    visto_em: Date.now()
-                                };
-                                localStorage.setItem('bvd:progresso', JSON.stringify(map));
-
-                                // 2. Dispatch event so catalog updates
-                                window.dispatchEvent(new CustomEvent('bvd:progresso-atualizado', {
-                                    detail: { titulo: clean, segundo: second, duracao: dur }
-                                }));
-
-                                // 3. CLOUD SUPABASE SYNC (For all other devices)
-                                if (window.bvdAuth && window.bvdAuth.cliente && window.bvdAuth.usuarioAtual) {
-                                    var usuario = window.bvdAuth.usuarioAtual();
-                                    if (usuario && usuario.id) {
-                                        var numericId = id ? parseInt(id, 10) : null;
-                                        var tmdbVal = (numericId && !isNaN(numericId)) ? numericId : null;
-                                        var payload = {
-                                            user_id: usuario.id,
-                                            tmdb_id: tmdbVal,
-                                            kind: kind,
-                                            titulo: clean,
-                                            poster: poster || null,
-                                            backdrop: backdrop || null,
-                                            temporada: null,
-                                            episodio: null,
-                                            segundo: Math.round(second),
-                                            duracao: Math.round(dur),
-                                            terminou: acabou,
-                                            visto_em: new Date().toISOString()
-                                        };
-                                        if (tmdbVal) {
-                                            window.bvdAuth.cliente.from('progresso').upsert(payload, {
-                                                onConflict: 'user_id,tmdb_id,kind'
-                                            }).then(function(){}).catch(function(){});
-                                        } else {
-                                            window.bvdAuth.cliente.from('progresso').upsert(payload).then(function(){}).catch(function(){});
-                                        }
-                                    }
-                                }
-                            } catch(e) {}
-                        };
-
-                        var card = e.target.closest('.cat-card, .poster, .retomar-card');
+                        var card = e.target.closest('.cat-card, .poster');
                         if (card) {
-                            var titleEl = card.querySelector('.cat-title, .poster-title, .retomar-titulo, h3, h4');
-                            var t = titleEl ? titleEl.textContent : (card.getAttribute('aria-label') || card.getAttribute('title') || '');
-                            var tmdbId = card.dataset.id || card.getAttribute('data-id') || '';
-                            var badge = card.querySelector('.cat-badge');
-                            var badgeTxt = badge ? badge.textContent.toLowerCase() : '';
-                            var kind = (badgeTxt.indexOf('sér') !== -1 || badgeTxt.indexOf('ser') !== -1) ? 'serie' : (badgeTxt.indexOf('anim') !== -1 ? 'anime' : 'filme');
-                            var imgEl = card.querySelector('img');
-                            var poster = imgEl ? (imgEl.currentSrc || imgEl.src || '') : '';
+                            var titleEl = card.querySelector('.cat-title, .poster-title, h3, h4');
+                            var t = titleEl ? titleEl.textContent : (card.getAttribute('title') || '');
                             if (t && !isGenericTitle(t)) {
                                 var cleanT = t.trim();
                                 window.__currentMovieTitle = cleanT;
-                                window.__activeMovieMeta = {
-                                    tmdb_id: tmdbId,
-                                    title: cleanT,
-                                    kind: kind,
-                                    poster: poster,
-                                    backdrop: ''
-                                };
                                 if (window.AndroidBridge && window.AndroidBridge.onMovieSelected) {
                                     window.AndroidBridge.onMovieSelected(cleanT);
                                 }
-                                queryAndReportSavedProgress(cleanT, tmdbId);
                             }
                             return;
                         }
 
-                        var btnAssistir = e.target.closest('#detalhe-assistir, #destaque-play, .previa-abrir, .detalhe-assistir');
+                        var btnAssistir = e.target.closest('#detalhe-assistir');
                         if (btnAssistir) {
-                            var dtTitleSnap = document.getElementById('detalhe-titulo');
-                            if (dtTitleSnap && dtTitleSnap.textContent && dtTitleSnap.textContent.trim()) {
-                                var dtFundoSnap = document.getElementById('detalhe-fundo');
-                                var dtMetaSnap = document.getElementById('detalhe-meta');
-                                var dtSinSnap = document.getElementById('detalhe-sinopse');
-                                var dtEpSnap = document.getElementById('detalhe-episodio');
-                                var relSnap = document.getElementById('relacionados');
-                                window.__savedMovieDetail = {
-                                    titulo: dtTitleSnap.textContent.trim(),
-                                    meta: dtMetaSnap ? dtMetaSnap.textContent.trim() : '',
-                                    sinopse: dtSinSnap ? dtSinSnap.textContent.trim() : '',
-                                    fundo: dtFundoSnap ? dtFundoSnap.style.backgroundImage : '',
-                                    episodioHtml: dtEpSnap ? dtEpSnap.innerHTML : '',
-                                    episodioHidden: dtEpSnap ? dtEpSnap.classList.contains('hidden') : true,
-                                    relacionadosHtml: relSnap ? relSnap.innerHTML : ''
-                                };
-                            }
-                            var dt = document.getElementById('detalhe-titulo') || document.getElementById('destaque-titulo') || document.getElementById('previa-titulo');
+                            var dt = document.getElementById('detalhe-titulo');
                             var t2 = (dt && dt.textContent ? dt.textContent.trim() : '') || window.__currentMovieTitle;
                             if (t2 && !isGenericTitle(t2)) {
                                 window.__currentMovieTitle = t2;
-                            }
-                            window.__isUserInMovie = true;
-                            window.__isUserInCatalog = false;
-                            var id = window.__activeMovieMeta ? window.__activeMovieMeta.tmdb_id : '';
-                            queryAndReportSavedProgress(window.__currentMovieTitle, id);
-                            var savedSec = getBestSavedProgress(window.__currentMovieTitle, id);
-                            if (window.AndroidBridge && window.AndroidBridge.onAssistirClicked) {
-                                try {
-                                    window.AndroidBridge.onAssistirClicked(window.__currentMovieTitle || '', savedSec);
-                                } catch(err) {
-                                    window.AndroidBridge.onAssistirClicked(window.__currentMovieTitle || '');
+                                window.__isUserInMovie = true;
+                                window.__isUserInCatalog = false;
+                                if (window.AndroidBridge && window.AndroidBridge.onMovieStateChanged) {
+                                    window.AndroidBridge.onMovieStateChanged(true, t2);
                                 }
-                            } else if (window.AndroidBridge && window.AndroidBridge.onMovieStateChanged) {
-                                window.AndroidBridge.onMovieStateChanged(true, window.__currentMovieTitle || '');
                             }
-                            autoSelectFirstServerAndPlay();
                         }
                     } catch(err) {}
                 }, true);
-
-                function autoSelectFirstServerAndPlay() {
-                    var attempts = 0;
-                    var maxAttempts = 60;
-                    var timer = setInterval(function() {
-                        attempts++;
-                        if (attempts > maxAttempts) {
-                            clearInterval(timer);
-                            return;
-                        }
-                        try {
-                            // 1. Auto click first server button if displayed in DOM
-                            var serverButtons = document.querySelectorAll(
-                                '#optionList .option, #optionList > div, .option, [onclick*="player"], ' +
-                                '.server-btn, .btn-server, [data-server], .server-item'
-                            );
-                            if (serverButtons && serverButtons.length > 0) {
-                                for (var i = 0; i < serverButtons.length; i++) {
-                                    var s = serverButtons[i];
-                                    if (s && s.offsetParent !== null) {
-                                        s.click();
-                                        break;
-                                    }
-                                }
-                            }
-
-                            // 2. Click achamosTocar if shown
-                            var achamosTocar = document.getElementById('achamos-tocar');
-                            if (achamosTocar && !achamosTocar.closest('.hidden')) {
-                                achamosTocar.click();
-                            }
-
-                            // 3. Auto click play button if web player is visible
-                            var playButtons = document.querySelectorAll(
-                                '.play-btn, .vjs-big-play-button, .jw-display-icon-container, [aria-label*="Play" i], button.play, #np-play'
-                            );
-                            for (var j = 0; j < playButtons.length; j++) {
-                                var p = playButtons[j];
-                                if (p && p.offsetParent !== null) {
-                                    p.click();
-                                }
-                            }
-
-                            // 4. Auto play any paused video
-                            var videos = document.querySelectorAll('video');
-                            for (var k = 0; k < videos.length; k++) {
-                                var v = videos[k];
-                                if (v && v.paused && v.id !== 'detalhe-trailer-video') {
-                                    v.muted = false;
-                                    v.play().catch(function(){});
-                                }
-                            }
-                        } catch(e) {}
-                    }, 100);
-                }
 
                 window.addEventListener('popstate', function() {
                     setTimeout(checkCatalogAndMovieState, 150);
@@ -1373,49 +753,6 @@ object InjectedJs {
                 scanAllVideos();
                 setInterval(scanAllVideos, 2500);
                 window.__scanVideos = scanAllVideos;
-
-                // Sync catalog "Continuar assistindo" items from Supabase and bvd:progresso to native player DB
-                function syncCatalogProgressToAndroid() {
-                    try {
-                        if (!window.AndroidBridge) return;
-                        var raw = localStorage.getItem('bvd:progresso');
-                        if (raw) {
-                            var map = JSON.parse(raw);
-                            for (var k in map) {
-                                var item = map[k];
-                                if (item && (item.titulo || item.title) && item.segundo && item.segundo > 10) {
-                                    var titleName = (item.titulo || item.title || '').trim();
-                                    if (window.AndroidBridge.onSyncLocalProgress) {
-                                        window.AndroidBridge.onSyncLocalProgress(titleName, Math.round(item.segundo), Math.round(item.duracao || 0));
-                                    }
-                                }
-                            }
-                        }
-                        if (window.bvdAuth && window.bvdAuth.cliente && window.bvdAuth.usuarioAtual) {
-                            var usuario = window.bvdAuth.usuarioAtual();
-                            if (usuario && usuario.id) {
-                                window.bvdAuth.cliente.from('progresso')
-                                    .select('titulo, segundo, duracao, tmdb_id, kind')
-                                    .order('visto_em', { ascending: false })
-                                    .limit(20)
-                                    .then(function(res) {
-                                        if (res && res.data && res.data.length > 0) {
-                                            res.data.forEach(function(row) {
-                                                if (row.titulo && row.segundo && row.segundo > 10) {
-                                                    var tName = row.titulo.trim();
-                                                    if (window.AndroidBridge.onSyncLocalProgress) {
-                                                        window.AndroidBridge.onSyncLocalProgress(tName, Math.round(row.segundo), Math.round(row.duracao || 0));
-                                                    }
-                                                }
-                                            });
-                                        }
-                                    }).catch(function(err){});
-                            }
-                        }
-                    } catch(e) {}
-                }
-                setInterval(syncCatalogProgressToAndroid, 6000);
-                setTimeout(syncCatalogProgressToAndroid, 1500);
             } catch(globalErr) {}
         })();
         """.trimIndent()

@@ -9,7 +9,6 @@ import android.os.Message
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
-import com.example.update.BaixarAtualizacao
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -18,25 +17,12 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.Toast
-import java.io.ByteArrayInputStream
-import java.net.HttpURLConnection
-import java.net.URL
-import java.nio.charset.Charset
-import android.content.pm.ActivityInfo
-import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.layout.offset
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.unit.IntOffset
-import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -77,7 +63,6 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -102,21 +87,20 @@ import com.example.ui.theme.NeonCyan
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 
-private const val DEFAULT_URL = "https://filminhoflix.vercel.app/"
+private const val DEFAULT_URL = "https://filmemeu.vercel.app/"
 private const val APP_USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36"
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun BrowserScreen(
     playerViewModel: PlayerViewModel,
-    onNavigateToDetected: () -> Unit = {},
+    onPlayStream: (StreamMedia) -> Unit,
+    onNavigateToDetected: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val repository = playerViewModel.repository
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
 
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
     var currentUrl by remember { mutableStateOf(DEFAULT_URL) }
@@ -139,144 +123,37 @@ fun BrowserScreen(
 
     var isUserInMovie by remember { mutableStateOf(false) }
     var activeMovieTitle by remember { mutableStateOf<String?>(null) }
+    var latestBannerStream by remember { mutableStateOf<StreamMedia?>(null) }
 
     // Helper for 1-click direct return to catalog
     val returnToCatalogInOneClick: () -> Unit = {
-        playerViewModel.stopPlayback()
         isUserInMovie = false
         activeMovieTitle = null
+        latestBannerStream = null
         repository.clearDetected()
         webViewInstance?.evaluateJavascript(
-            """
-            (function() {
-                try {
-                    if (window.__goToCatalog) {
-                        window.__goToCatalog();
-                    } else {
-                        localStorage.removeItem('bvd:place');
-                        localStorage.setItem('bvd:visitante', '1');
-                        var btnVis = document.getElementById('btn-visitante');
-                        if (btnVis) btnVis.click();
-                        var lp = document.getElementById('login-page');
-                        if (lp) lp.classList.add('hidden');
-                        var dt = document.getElementById('detalhe');
-                        if (dt) dt.classList.add('hidden');
-                        var sf = document.getElementById('site-frame');
-                        if (sf) {
-                            sf.classList.add('hidden');
-                            var ifr = sf.querySelector('iframe');
-                            if (ifr) ifr.src = 'about:blank';
-                        }
-                        var np = document.getElementById('nosso-player');
-                        if (np) {
-                            np.classList.add('hidden');
-                            var v = np.querySelector('video');
-                            if (v) { v.pause(); v.src = ''; }
-                        }
-                        var cat = document.getElementById('catalog');
-                        if (cat) cat.classList.remove('hidden');
-                        var fil = document.getElementById('fileiras');
-                        if (fil) fil.classList.remove('hidden');
-                        var cg = document.getElementById('catalog-grid');
-                        if (cg) cg.classList.remove('hidden');
-                        document.documentElement.classList.remove('no-titulo', 'sem-conta', 'conferindo-conta');
-                        document.documentElement.classList.add('pagina-livre');
-                        var catKind = document.querySelector('input[name="cat-kind"]:checked') || document.querySelector('input[name="cat-kind"]');
-                        if (catKind) { catKind.dispatchEvent(new Event('change', { bubbles: true })); }
-                    }
-                } catch(e) {}
-            })();
-            """.trimIndent(),
+            "if (window.__goToCatalog) { window.__goToCatalog(); } else if (typeof voltarParaCatalogo === 'function') { voltarParaCatalogo(false); }",
             null
         )
     }
 
-    val playerState by playerViewModel.playerState.collectAsState()
+    val isNativePlayerActive = playerViewModel.playerState.collectAsState().value.currentStream != null
 
-    // Sync playback progress back to website's bvd:progresso so "Continuar assistindo" catalog row updates
-    LaunchedEffect(playerState.currentPositionMs) {
-        val stream = playerState.currentStream
-        val posMs = playerState.currentPositionMs
-        val durMs = playerState.totalDurationMs
-        if (stream != null && posMs > 5_000L) {
-            val title = if (!repository.isGenericTitle(stream.title)) stream.title else (activeMovieTitle ?: "")
-            if (title.isNotBlank()) {
-                val sec = posMs / 1000L
-                val durSec = if (durMs > 0) durMs / 1000L else stream.durationSeconds
-                val safeTitle = title.replace("\\", "\\\\").replace("'", "\\'")
-                webViewInstance?.evaluateJavascript(
-                    "if (window.__syncProgressToWeb) { window.__syncProgressToWeb('$safeTitle', $sec, $durSec); }",
-                    null
-                )
-            }
-        }
-    }
-
-    val performBackNavigation: () -> Unit = {
-        if (customFullscreenView != null) {
-            customViewCallback?.onCustomViewHidden()
-            customFullscreenView = null
-            customViewCallback = null
+    // Keep latest banner stream active - strictly for genuine movies (> 15m). Never commercials with unknown duration!
+    LaunchedEffect(isUserInMovie, detectedList) {
+        if (!isUserInMovie) {
+            latestBannerStream = null
         } else {
-            webViewInstance?.evaluateJavascript(
-                "(function() { return (window.__handleBackNavigation ? window.__handleBackNavigation() : 'none'); })();"
-            ) { result ->
-                val cleanResult = result?.replace("\"", "")?.trim() ?: ""
-                when (cleanResult) {
-                    "menu_closed" -> {
-                        // Menu panel was closed cleanly with Back button on TV Box
-                    }
-                    "returned_to_detalhe" -> {
-                        isUserInMovie = true
-                        repository.clearDetected()
-                    }
-                    "returned_to_catalog" -> {
-                        isUserInMovie = false
-                        activeMovieTitle = null
-                        repository.clearDetected()
-                    }
-                    else -> {
-                        if (isUserInMovie) {
-                            returnToCatalogInOneClick()
-                        } else if (canGoBack && webViewInstance?.canGoBack() == true) {
-                            webViewInstance?.goBack()
-                            webViewInstance?.postDelayed({
-                                webViewInstance?.evaluateJavascript(
-                                    "if (window.__checkCatalogState) window.__checkCatalogState();",
-                                    null
-                                )
-                            }, 300)
-                        } else {
-                            val now = System.currentTimeMillis()
-                            if (now - lastBackPressTime < 2000) {
-                                (context as? android.app.Activity)?.finish()
-                            } else {
-                                lastBackPressTime = now
-                                Toast.makeText(context, "Pressione voltar novamente para sair do aplicativo", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                }
-            }
+            val valid = detectedList.firstOrNull { it.isAbove15Min && it.durationSeconds >= 900L }
+            latestBannerStream = valid
         }
     }
 
-    val toggleScreenOrientation: () -> Unit = {
-        val act = context as? android.app.Activity
-        if (act != null) {
-            val isLandscape = act.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-            val newOrientation = if (isLandscape) {
-                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-            } else {
-                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    LaunchedEffect(Unit) {
+        repository.newMovieAlert.collectLatest { stream ->
+            if (isUserInMovie && stream.isAbove15Min && stream.durationSeconds >= 900L) {
+                latestBannerStream = stream
             }
-            act.requestedOrientation = newOrientation
-            val msg = if (newOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
-                "Modo Paisagem (Horizontal)"
-            } else {
-                "Modo Retrato (Vertical)"
-            }
-            Toast.makeText(act, msg, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -284,12 +161,7 @@ fun BrowserScreen(
     LaunchedEffect(webViewInstance) {
         playerViewModel.webKeyEvents.collectLatest { action ->
             when (action) {
-                PlayerViewModel.WebKeyAction.HANDLE_BACK -> {
-                    performBackNavigation()
-                }
                 PlayerViewModel.WebKeyAction.RETURN_TO_AUDIO_SELECTION -> {
-                    repository.clearDetected()
-                    isUserInMovie = true
                     webViewInstance?.evaluateJavascript(
                         "if(window.__returnToMovieAudioSelection) { window.__returnToMovieAudioSelection(); }",
                         null
@@ -313,43 +185,49 @@ fun BrowserScreen(
                         null
                     )
                 }
-                PlayerViewModel.WebKeyAction.DPAD_CENTER -> {
-                    webViewInstance?.evaluateJavascript(
-                        "if(window.__handleTvRemoteOk) { window.__handleTvRemoteOk(); }",
-                        null
-                    )
-                }
-                PlayerViewModel.WebKeyAction.TOGGLE_MENU -> {
-                    webViewInstance?.evaluateJavascript(
-                        "if(window.__toggleMenu) { window.__toggleMenu(); }",
-                        null
-                    )
-                }
-                PlayerViewModel.WebKeyAction.TOGGLE_ROTATION -> {
-                    toggleScreenOrientation()
-                }
                 else -> {
-                    // D-pad navigation handled naturally by WebView spatial navigation
+                    // D-pad navigation handled naturally by WebView and setas.js
                 }
             }
         }
     }
 
-    // Back handling: follows strict 3-tier hierarchy: Fullscreen -> Movie Details (#detalhe) -> Catalog -> Exit
-    BackHandler(enabled = true) {
-        performBackNavigation()
+    // Back handling: only active when native player overlay is NOT active
+    // If inside a movie, 1 single click returns cleanly to catalog without stepping through iframe redirect history!
+    BackHandler(enabled = !isNativePlayerActive) {
+        if (customFullscreenView != null) {
+            customViewCallback?.onCustomViewHidden()
+            customFullscreenView = null
+            customViewCallback = null
+        } else if (isUserInMovie) {
+            returnToCatalogInOneClick()
+        } else if (canGoBack && webViewInstance?.canGoBack() == true) {
+            webViewInstance?.goBack()
+            webViewInstance?.postDelayed({
+                webViewInstance?.evaluateJavascript(
+                    "if (window.__checkCatalogState) window.__checkCatalogState();",
+                    null
+                )
+            }, 300)
+        } else {
+            val now = System.currentTimeMillis()
+            if (now - lastBackPressTime < 2000) {
+                (context as? android.app.Activity)?.finish()
+            } else {
+                lastBackPressTime = now
+                Toast.makeText(context, "Pressione voltar novamente para sair do aplicativo", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     Box(modifier = modifier.fillMaxSize().background(CinemaBlack)) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Top Toolbar - exists in codebase, but hidden per user request: "isso aqui pode ter mas nao pode ficar visivel imagem 1"
-            var showTopToolbar by remember { mutableStateOf(false) }
-            if (showTopToolbar) {
-                Surface(
-                    color = CinemaDark,
-                    border = BorderStroke(1.dp, CinemaCardBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+            // Top Toolbar
+            Surface(
+                color = CinemaDark,
+                border = BorderStroke(1.dp, CinemaCardBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -399,7 +277,12 @@ fun BrowserScreen(
 
                         IconButton(
                             onClick = {
-                                returnToCatalogInOneClick()
+                                isUserInMovie = false
+                                activeMovieTitle = null
+                                latestBannerStream = null
+                                repository.clearDetected()
+                                webViewInstance?.loadUrl(DEFAULT_URL)
+                                inputUrl = DEFAULT_URL
                             },
                             modifier = Modifier.size(36.dp).testTag("web_btn_home")
                         ) {
@@ -408,34 +291,6 @@ fun BrowserScreen(
                                 contentDescription = "Início",
                                 tint = NeonCyan,
                                 modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        Button(
-                            onClick = {
-                                returnToCatalogInOneClick()
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (!isUserInMovie) NeonAmber else CinemaSurface,
-                                contentColor = if (!isUserInMovie) Color.Black else TextPrimary
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                            modifier = Modifier
-                                .height(34.dp)
-                                .padding(horizontal = 2.dp)
-                                .testTag("web_btn_catalog")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Movie,
-                                contentDescription = "Catálogo",
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text(
-                                text = "Catálogo",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
                             )
                         }
 
@@ -548,7 +403,6 @@ fun BrowserScreen(
                     }
                 }
             }
-        }
 
             // Webview Content Area + Floating Detected Banner
             Box(
@@ -582,17 +436,6 @@ fun BrowserScreen(
                                 mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                                 userAgentString = APP_USER_AGENT
                             }
-                            isFocusable = true
-                            isFocusableInTouchMode = true
-                            keepScreenOn = true
-
-                            // Um WebView ignora downloads: sem isto, o link do
-                            // APK no site nao faz nada, nem erro aparece.
-                            setDownloadListener { url, agente, _, tipo, _ ->
-                                if (BaixarAtualizacao.ehApk(url, tipo)) {
-                                    BaixarAtualizacao.baixar(ctx, url, agente ?: APP_USER_AGENT)
-                                }
-                            }
 
                             // JavaScript Native Bridge - Thread-safe
                             addJavascriptInterface(object {
@@ -620,7 +463,6 @@ fun BrowserScreen(
 
                                 @JavascriptInterface
                                 fun onMovieSelected(title: String?) {
-                                    playerViewModel.stopPlayback()
                                     val clean = title?.trim()
                                     if (!clean.isNullOrEmpty() && !repository.isGenericTitle(clean)) {
                                         activeMovieTitle = clean
@@ -643,105 +485,12 @@ fun BrowserScreen(
                                     }
                                 }
 
-                                fun handleAssistirClicked(title: String?, savedSec: Long) {
-                                    val clean = title?.trim()
-                                    if (!clean.isNullOrEmpty() && !repository.isGenericTitle(clean)) {
-                                        activeMovieTitle = clean
-                                        repository.setCurrentMovieTitle(clean)
-                                        if (savedSec > 10L) {
-                                            coroutineScope.launch {
-                                                repository.saveProgressForTitle(clean, savedSec * 1000L)
-                                            }
-                                        }
-                                    }
-                                    isUserInMovie = true
-                                }
-
-                                @JavascriptInterface
-                                fun onAssistirClicked(title: String?) {
-                                    handleAssistirClicked(title, 0L)
-                                }
-
-                                @JavascriptInterface
-                                fun onAssistirClicked(title: String?, savedSec: Double) {
-                                    handleAssistirClicked(title, savedSec.toLong())
-                                }
-
-                                @JavascriptInterface
-                                fun onAssistirClicked(title: String?, savedSec: Long) {
-                                    handleAssistirClicked(title, savedSec)
-                                }
-
-                                @JavascriptInterface
-                                fun onCloudProgressLoaded(title: String?, second: Long, durationSec: Long) {
-                                    val clean = title?.trim()
-                                    if (!clean.isNullOrEmpty() && !repository.isGenericTitle(clean) && second > 10L) {
-                                        playerViewModel.updateCloudProgress(clean, second * 1000L, durationSec)
-                                    }
-                                }
-
-                                @JavascriptInterface
-                                fun onCloudProgressLoaded(title: String?, second: Double, durationSec: Double) {
-                                    onCloudProgressLoaded(title, second.toLong(), durationSec.toLong())
-                                }
-
-                                @JavascriptInterface
-                                fun onSyncLocalProgress(title: String?, second: Long, durationSec: Long) {
-                                    val clean = title?.trim()
-                                    if (!clean.isNullOrEmpty() && !repository.isGenericTitle(clean) && second > 10L) {
-                                        coroutineScope.launch {
-                                            repository.saveProgressForTitle(clean, second * 1000L, durationSec)
-                                        }
-                                    }
-                                }
-
-                                @JavascriptInterface
-                                fun onSyncLocalProgress(title: String?, second: Double, durationSec: Double) {
-                                    onSyncLocalProgress(title, second.toLong(), durationSec.toLong())
-                                }
-
                                 @JavascriptInterface
                                 fun onNavigatedToCatalog() {
-                                    playerViewModel.stopPlayback()
                                     isUserInMovie = false
                                     activeMovieTitle = null
+                                    latestBannerStream = null
                                     repository.clearDetected()
-                                }
-
-                                @JavascriptInterface
-                                fun toggleOrientation() {
-                                    (context as? android.app.Activity)?.let { act ->
-                                        act.runOnUiThread {
-                                            toggleScreenOrientation()
-                                        }
-                                    }
-                                }
-
-                                @JavascriptInterface
-                                fun setOrientation(mode: String?) {
-                                    (context as? android.app.Activity)?.let { act ->
-                                        act.runOnUiThread {
-                                            when (mode?.lowercase()?.trim()) {
-                                                "landscape", "paisagem", "landscape-primary", "landscape-secondary" -> {
-                                                    act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                                                }
-                                                "portrait", "retrato", "portrait-primary", "portrait-secondary" -> {
-                                                    act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-                                                }
-                                                "auto", "sensor", "any" -> {
-                                                    act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
-                                                }
-                                                else -> {
-                                                    toggleScreenOrientation()
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                @JavascriptInterface
-                                fun rotateScreen() {
-                                    toggleOrientation()
                                 }
                             }, "AndroidBridge")
 
@@ -759,7 +508,7 @@ fun BrowserScreen(
                                             return true
                                         }
 
-                                        // 2. Allow video streams to load in web player
+                                        // 2. Intercept video streams internally (ignore YouTube trailer streams)
                                         val isYouTube = lower.contains("youtube.com") || lower.contains("youtu.be") || lower.contains("googlevideo.com")
                                         if (!isYouTube && (lower.contains(".m3u8") || lower.contains(".mp4"))) {
                                             if (isUserInMovie) {
@@ -771,7 +520,7 @@ fun BrowserScreen(
                                                     userAgent = APP_USER_AGENT
                                                 )
                                             }
-                                            return false
+                                            return true
                                         }
 
                                         // 3. Block external popups, stores, and ad networks
@@ -796,12 +545,8 @@ fun BrowserScreen(
 
                                         // 4. Strict whitelist: only stay in our app system and authorized embeds (e.g. YouTube trailers)
                                         val isAllowedSystem = host.isEmpty() ||
-                                            host.contains("filminhoflix") ||
-                                            host.contains("meufilme") ||
                                             host.contains("filmemeu") ||
                                             host.contains("myembed") ||
-                                            host.contains("playerflix") ||
-                                            host.contains("embedmovies") ||
                                             host.contains("vercel.app") ||
                                             host.contains("supabase") ||
                                             host.contains("themoviedb") ||
@@ -833,8 +578,7 @@ fun BrowserScreen(
                                         val reqUrl = request?.url?.toString()
                                         if (reqUrl != null && isUserInMovie) {
                                             val lower = reqUrl.lowercase()
-                                            val isYouTube = lower.contains("youtube.com") || lower.contains("googlevideo.com") || lower.contains("ytimg.com")
-                                            if (!isYouTube && (lower.contains(".m3u8") || lower.contains(".mp4"))) {
+                                            if (!lower.contains("youtube.com") && !lower.contains("googlevideo.com") && !lower.contains("ytimg.com")) {
                                                 repository.onStreamCandidate(
                                                     url = reqUrl,
                                                     pageTitle = activeMovieTitle ?: "",
@@ -842,17 +586,6 @@ fun BrowserScreen(
                                                     initialDurationSec = 0L,
                                                     userAgent = APP_USER_AGENT
                                                 )
-                                            }
-
-                                            // Subframe script injection for playerflix / myembed to auto-click first server and auto-play
-                                            val isEmbedServer = (lower.contains("playerflix.ink/filme/") ||
-                                                                 lower.contains("playerflix.ink/serie/") ||
-                                                                 lower.contains("myembed.biz/filme/") ||
-                                                                 lower.contains("myembed.biz/serie/")) &&
-                                                                request.method.equals("GET", ignoreCase = true)
-                                            if (isEmbedServer) {
-                                                val injected = injectAutomationIntoEmbed(reqUrl, request)
-                                                if (injected != null) return injected
                                             }
                                         }
                                     } catch (e: Throwable) {
@@ -867,9 +600,10 @@ fun BrowserScreen(
                                     if (url != null) {
                                         currentUrl = url
                                         inputUrl = url
-                                        if (url == DEFAULT_URL || url.contains("filminhoflix.vercel.app") || url.contains("meufilme.vercel.app") || url.contains("filmemeu.vercel.app")) {
+                                        if (url == DEFAULT_URL || url == "https://filmemeu.vercel.app" || url == "https://filmemeu.vercel.app/") {
                                             isUserInMovie = false
                                             activeMovieTitle = null
+                                            latestBannerStream = null
                                             repository.clearDetected()
                                         }
                                     }
@@ -907,14 +641,12 @@ fun BrowserScreen(
                                 override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
                                     customFullscreenView = view
                                     customViewCallback = callback
-                                    (context as? android.app.Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                                 }
 
                                 override fun onHideCustomView() {
                                     customViewCallback?.onCustomViewHidden()
                                     customFullscreenView = null
                                     customViewCallback = null
-                                    (context as? android.app.Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
                                 }
 
                                 override fun onCreateWindow(
@@ -932,6 +664,19 @@ fun BrowserScreen(
                         }
                     },
                     modifier = Modifier.fillMaxSize()
+                )
+
+                // Detected Movie Banner at the bottom of the browser - only shown when inside a movie and stream has valid duration (> 15m)
+                // Commercials/ads with unknown duration are strictly excluded
+                DetectedStreamBanner(
+                    stream = if (isUserInMovie && latestBannerStream?.isAbove15Min == true && (latestBannerStream?.durationSeconds ?: 0L) >= 900L) latestBannerStream else null,
+                    onPlay = { stream ->
+                        onPlayStream(stream)
+                    },
+                    onDismiss = { latestBannerStream = null },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 12.dp)
                 )
             }
         }
@@ -956,48 +701,6 @@ fun BrowserScreen(
                 },
                 modifier = Modifier.fillMaxSize()
             )
-        }
-
-        // Screen Rotation Button (matching image_45634bb7.png provided by user)
-        // Draggable floating button to comfortably toggle Portrait/Landscape anywhere
-        var dragOffsetX by remember { mutableFloatStateOf(0f) }
-        var dragOffsetY by remember { mutableFloatStateOf(0f) }
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .offset { IntOffset(dragOffsetX.roundToInt(), dragOffsetY.roundToInt()) }
-                .padding(top = 16.dp, end = 16.dp)
-                .pointerInput(Unit) {
-                    detectDragGestures { change, dragAmount ->
-                        change.consume()
-                        dragOffsetX += dragAmount.x
-                        dragOffsetY += dragAmount.y
-                    }
-                }
-        ) {
-            Surface(
-                onClick = { toggleScreenOrientation() },
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0xDD1E2333),
-                border = BorderStroke(1.dp, Color(0xFF334155)),
-                shadowElevation = 8.dp,
-                modifier = Modifier
-                    .size(46.dp)
-                    .testTag("btn_rotate_screen")
-            ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    Icon(
-                        painter = painterResource(id = com.example.R.drawable.ic_screen_rotation_btn),
-                        contentDescription = "Girar Tela (Alternar Paisagem / Retrato)",
-                        tint = Color.White,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
-            }
         }
     }
 
@@ -1073,95 +776,3 @@ fun BrowserScreen(
         )
     }
 }
-
-private fun injectAutomationIntoEmbed(urlStr: String, request: WebResourceRequest): WebResourceResponse? {
-    return try {
-        val url = URL(urlStr)
-        val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 6000
-            readTimeout = 6000
-            instanceFollowRedirects = true
-            setRequestProperty("User-Agent", APP_USER_AGENT)
-            request.requestHeaders.forEach { (k, v) ->
-                if (!k.equals("Host", ignoreCase = true)) {
-                    setRequestProperty(k, v)
-                }
-            }
-            if (urlStr.contains("playerflix.ink")) {
-                setRequestProperty("Referer", "https://myembed.biz/")
-            } else if (urlStr.contains("myembed.biz")) {
-                setRequestProperty("Referer", "https://filminhoflix.vercel.app/")
-            }
-        }
-
-        val code = conn.responseCode
-        if (code !in 200..299) {
-            conn.disconnect()
-            return null
-        }
-
-        val rawContentType = conn.contentType ?: "text/html; charset=UTF-8"
-        val mimeType = rawContentType.split(";").firstOrNull()?.trim() ?: "text/html"
-        val charsetName = if (rawContentType.contains("charset=", ignoreCase = true)) {
-            rawContentType.substringAfter("charset=").substringBefore(";").trim()
-        } else {
-            "UTF-8"
-        }
-        val charset = try { Charset.forName(charsetName) } catch (e: Exception) { Charsets.UTF_8 }
-
-        val originalHtml = conn.inputStream.bufferedReader(charset).use { it.readText() }
-
-        val scriptToInject = """
-        <script>
-        (function() {
-            var clickedServer = false;
-            function autoClickFirstServer() {
-                if (clickedServer) return;
-                var opts = document.querySelectorAll('#optionList .option, #optionList > div, .option, [onclick*="player"]');
-                for (var i = 0; i < opts.length; i++) {
-                    var o = opts[i];
-                    if (o && o.offsetParent !== null) {
-                        clickedServer = true;
-                        o.click();
-                        break;
-                    }
-                }
-            }
-            setInterval(autoClickFirstServer, 100);
-
-            function autoPlayEmbed() {
-                try {
-                    var playBtns = document.querySelectorAll('.play-btn, .vjs-big-play-button, .jw-display-icon-container, [aria-label*="Play" i], button.play, .play');
-                    playBtns.forEach(function(b) {
-                        if (b && b.offsetParent !== null) b.click();
-                    });
-                    var vids = document.querySelectorAll('video');
-                    vids.forEach(function(v) {
-                        if (v.paused) {
-                            v.muted = false;
-                            v.play().catch(function(){});
-                        }
-                    });
-                } catch(e) {}
-            }
-            setInterval(autoPlayEmbed, 350);
-        })();
-        </script>
-        """.trimIndent()
-
-        val modifiedHtml = if (originalHtml.contains("</body>", ignoreCase = true)) {
-            originalHtml.replace("</body>", "$scriptToInject\n</body>", ignoreCase = true)
-        } else {
-            "$originalHtml\n$scriptToInject"
-        }
-
-        val bytes = modifiedHtml.toByteArray(Charsets.UTF_8)
-        val headers = mutableMapOf<String, String>()
-        headers["Access-Control-Allow-Origin"] = "*"
-        WebResourceResponse(mimeType, "UTF-8", 200, "OK", headers, ByteArrayInputStream(bytes))
-    } catch (e: Exception) {
-        null
-    }
-}
-
